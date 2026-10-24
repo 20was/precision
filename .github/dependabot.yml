@@ -18,3 +18,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    groups:
+      codeql-security-updates:
+        applies-to: security-updates
+        patterns:
+          - github/codeql-action/*
+      codeql-version-updates:
+        applies-to: version-updates
+        patterns:
+          - github/codeql-action/*
