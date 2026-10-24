@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible problem with Precision
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please remove private page content from screenshots and logs before sharing them.
+  - type: input
+    id: version
+    attributes:
+      label: Precision version or commit
+      placeholder: 0.1.2 or commit hash
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: Chrome 130 on macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the page type and the target element when relevant.
+      placeholder: 1. Open a regular webpage…
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add a sanitized screenshot or a minimal local fixture if it helps.

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Precision capture showcase</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: #292a27;
+        background: #f5f4f0;
+        font:
+          15px/1.5 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+      .site-nav {
+        height: 66px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 max(32px, calc((100vw - 1180px) / 2));
+        background: #fff;
+        border-bottom: 1px solid #e8e7e2;
+      }
+      .brand {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+      .brand-mark {
+        width: 26px;
+        height: 26px;
+        border: 2px solid #252622;
+        border-radius: 8px;
+        position: relative;
+      }
+      .brand-mark:after {
+        content: "";
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        background: #c4ef55;
+        right: -4px;
+        bottom: -4px;
+        border: 2px solid #252622;
+        border-radius: 3px;
+      }
+      .nav-note {
+        color: #777970;
+        font-size: 13px;
+      }
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 72px 32px 96px;
+      }
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+        font-size: 11px;
+        font-weight: 700;
+        color: #73756d;
+      }
+      h1 {
+        max-width: 680px;
+        margin: 15px 0 14px;
+        font-size: clamp(42px, 5.2vw, 66px);
+        letter-spacing: -0.065em;
+        line-height: 0.99;
+        font-weight: 640;
+      }
+      .intro {
+        max-width: 510px;
+        color: #73756d;
+        font-size: 17px;
+        margin: 0;
+      }
+      .showcase {
+        display: grid;
+        grid-template-columns: 1fr 390px;
+        gap: 56px;
+        align-items: center;
+        margin-top: 62px;
+      }
+      .feature-image {
+        min-height: 320px;
+        border-radius: 18px;
+        background: #dfe6d5;
+        position: relative;
+        overflow: hidden;
+      }
+      .sun {
+        position: absolute;
+        width: 210px;
+        height: 210px;
+        top: 30px;
+        right: 65px;
+        border-radius: 50%;
+        background: #d9f578;
+      }
+      .land {
+        position: absolute;
+        height: 200px;
+        width: 130%;
+        bottom: -90px;
+        left: -10%;
+        border-radius: 50% 50% 0 0;
+        background: #668577;
+        transform: rotate(-7deg);
+      }
+      .land.back {
+        height: 170px;
+        bottom: -77px;
+        background: #a5b7a1;
+        transform: rotate(8deg);
+        left: -18%;
+      }
+      .image-caption {
+        position: absolute;
+        bottom: 18px;
+        left: 20px;
+        z-index: 1;
+        color: #fff;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+      .story h2 {
+        font-size: 26px;
+        line-height: 1.1;
+        letter-spacing: -0.045em;
+        margin: 0 0 12px;
+      }
+      .story p {
+        margin: 0;
+        color: #72746c;
+      }
+      .story-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 24px;
+        color: #73756d;
+        font-size: 12px;
+      }
+      .avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #dddacb;
+        display: grid;
+        place-items: center;
+        color: #4d4e48;
+        font-weight: 700;
+      }
+      .hairline {
+        border-top: 1px solid #e4e2db;
+        margin-top: 25px;
+        padding-top: 18px;
+        color: #777970;
+        font-size: 12px;
+      }
+      @media (max-width: 760px) {
+        main {
+          padding: 48px 22px;
+        }
+        .showcase {
+          grid-template-columns: 1fr;
+          gap: 24px;
+          margin-top: 38px;
+        }
+        .feature-image {
+          min-height: 260px;
+        }
+        .site-nav {
+          padding: 0 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-nav">
+      <div class="brand">
+        <span class="brand-mark"></span><span>fieldnotes</span>
+      </div>
+      <span class="nav-note">Stories for a considered life</span>
+    </header>
+    <main>
+      <div class="eyebrow">Journal &nbsp; / &nbsp; Spaces</div>
+      <h1>Make room for a slower kind of morning.</h1>
+      <p class="intro">
+        Small rituals, thoughtful objects and the places that make everyday life
+        feel a little more intentional.
+      </p>
+      <section class="showcase" aria-label="Featured story">
+        <div class="feature-image" aria-label="Illustrated landscape">
+          <div class="sun"></div>
+          <div class="land back"></div>
+          <div class="land"></div>
+          <span class="image-caption">The quiet coast · 06:18 AM</span>
+        </div>
+        <article class="story" id="capture-story">
+          <div class="eyebrow">A FIELD GUIDE &nbsp; · &nbsp; 8 MIN READ</div>
+          <h2>Finding a little more space in the day</h2>
+          <p>
+            A walk before the world wakes up can change the shape of everything
+            that follows. Here are a few ways to make it your own.
+          </p>
+          <div class="story-meta">
+            <span class="avatar">M</span
+            ><span
+              >By Maya Chen<br /><span style="color: #9a9b94"
+                >October 18, 2026</span
+              ></span
+            >
+          </div>
+          <div class="hairline">Selected story · 4 sections · 1,240 words</div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

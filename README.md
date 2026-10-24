@@ -1,67 +1,97 @@
-# Precision
+<div align="center">
+  <img src="assets/precision-banner.svg" alt="Precision — capture the part you actually need" width="100%" />
 
-A local Chrome / Brave extension for capturing the visible part of a webpage element. Hover, select, copy or download a PNG. No accounts, uploads, analytics or screenshot history.
+  <p><strong>A local-first screenshot tool for Chrome and Brave.</strong><br />Select an element on the page, then copy it in place or save a PNG.</p>
 
-## Install and load
+  <p>
+    <a href="https://github.com/20was/precision/actions/workflows/ci.yml"><img src="https://github.com/20was/precision/actions/workflows/ci.yml/badge.svg" alt="Continuous integration" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34352f.svg" alt="MIT License" /></a>
+    <a href="https://github.com/20was/precision/releases"><img src="https://img.shields.io/badge/status-early%20development-c8ee65?labelColor=34352f" alt="Early development" /></a>
+  </p>
+</div>
+
+## See it in action
+
+Real screenshots of the unpacked extension running on the included local showcase page.
+
+<p align="center">
+  <img src="docs/images/selection.webp" alt="Precision highlights a webpage element and places Copy and Preview controls beside the pointer" width="49%" />
+  <img src="docs/images/preview.webp" alt="Precision shows the captured element in an in-page preview with Copy image, Download PNG, and Close actions" width="49%" />
+</p>
+
+## What it does
+
+- Highlights useful DOM elements as you move the pointer.
+- Copies a visible element capture directly from the pointer controls, or opens an in-page preview.
+- Saves a PNG without opening another tab.
+- Uses temporary tab access only after you invoke the extension.
+- Keeps screenshots on your device and discards them when you close the preview.
+
+Precision captures the visible pixels inside an element's bounds. Overlapping page content remains in the image; it does not re-render the element in isolation. Full-page capture, editing, annotation, history, and cloud features are outside this release.
+
+## Install from source
 
 Requires Node.js 22 or newer.
 
 ```sh
+git clone https://github.com/20was/precision.git
+cd precision
 npm ci
 npm run build
 ```
 
 1. Open `chrome://extensions` in Chrome or `brave://extensions` in Brave.
-2. Enable **Developer mode** and choose **Load unpacked**.
-3. Select this repository's `dist` folder (not the repository root).
-4. Pin Precision from the browser's Extensions menu.
-5. Open an ordinary HTTP/HTTPS page. Click Precision, then **Start selecting**.
-6. Hover an element. A compact **Copy / Preview / Esc** control appears beside the pointer. When it would cover a small target, it sits flush beside it to keep it visible; click **Copy** for an immediate in-page copy or **Preview** / press Enter to open the image on the same webpage.
-7. In the in-page preview, choose **Copy image**, **Download PNG**, or **Close**.
+2. Turn on **Developer mode** and choose **Load unpacked**.
+3. Select the repository's `dist` folder.
+4. Pin Precision, open a regular webpage, and choose **Start selecting** from its toolbar popup.
+5. Hover an element. Choose **Copy** for an in-place copy, or **Preview** / press Enter to review and download.
 
-After rebuilding, click **Reload** on Precision's extension card and refresh the webpage to remove any old injected selector. Current build: **0.1.2**, shown in the popup.
+After rebuilding, reload Precision from the extensions page and refresh the webpage. Browser internal pages, the Chrome Web Store, PDF viewers, and file URLs do not allow the DOM access this feature needs.
 
-## Selection
+## Keyboard controls
 
-- **Escape** or the visible **Esc** control exits and restores browsing.
-- **Arrow Up** selects the nearest visible parent.
-- **Arrow Down** selects the first visible direct child. This is not arbitrary DOM traversal.
-- The compact Copy control stays close to the pointer; when it would cover a small target, it sits flush beside that target. Hover continues to retarget elsewhere; only a narrow boundary around the controls is ignored for hit testing.
-- Scrolling retargets the element under the pointer. Resize, navigation, tab changes and browser focus loss cancel selection.
-- The outline shows only the supported visible rectangle. Captures include overlapping page content; they are not isolated DOM renders.
-- Selection expires after two minutes; a pending capture times out after 15 seconds. Direct Copy requires a secure page context and clipboard access; if unavailable, use Enter to open the in-page preview and copy there.
+| Key          | Action                                          |
+| ------------ | ----------------------------------------------- |
+| `Escape`     | Cancel selection and restore normal browsing    |
+| `Enter`      | Capture the current target and open the preview |
+| `Arrow Up`   | Select the nearest visible parent               |
+| `Arrow Down` | Select the first visible direct child           |
 
-Chrome/Brave internal pages, extension pages, the Web Store, PDF viewers and file URLs are unsupported. Use a regular webpage. Pinch zoom is unsupported; desktop browser zoom is tested at 100%, 125% and 150%.
+Selection follows the pointer while the controls stay near it. When the selected element is too small, the controls move beside its bounds. The capture is limited to the visible portion of the element.
 
-## Development and verification
+## Development
 
-| Command                           | Purpose                                                             |
-| --------------------------------- | ------------------------------------------------------------------- |
-| `npm ci`                          | Reproduce locked dependencies                                       |
-| `npm run dev`                     | Watch TypeScript; reload the extension to pick up changes           |
-| `npm run build`                   | Clean production build into `dist`                                  |
-| `npm run typecheck`               | Strict TypeScript checks                                            |
-| `npm run lint`                    | ESLint                                                              |
-| `npm test`                        | Unit tests                                                          |
-| `npx playwright install chromium` | Install test Chromium                                               |
-| `npm run test:integration`        | Actual-extension tests in installed Chrome, Brave and test Chromium |
-| `npm run check`                   | Typecheck, lint, units, production build                            |
-| `npm run format`                  | Format source and documentation                                     |
+```sh
+npm ci
+npm run dev
+```
 
-Restart `npm run dev` after editing files in `public/`. Tests use isolated disposable profiles and original production permissions. The Chrome and Brave executable paths in `tests/extension.spec.ts` target macOS; change those paths for another OS. Missing installed browsers are explicitly skipped. Tests require a modern browser implementing the DevTools extension-testing domain; the extension itself declares Chrome 120+ but older releases are not verified.
+`npm run dev` watches TypeScript files. Load `dist` as an unpacked extension, then reload it after changes. Run `npm run check` before submitting changes.
 
-Integration tests use the documented DevTools extension action to grant real `activeTab` access, execute the actual popup Start button, and then send real mouse/keyboard events. Only the test browser gets clipboard-read permission to verify PNG readback. Production requests clipboard-write only. Tests never add broad host permissions or mock screenshots. Artifacts and detailed logs are in `test-results/`.
+| Command                    | Purpose                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| `npm run build`            | Build the production extension into `dist`                                                |
+| `npm run typecheck`        | Run strict TypeScript checks                                                              |
+| `npm run lint`             | Run ESLint                                                                                |
+| `npm test`                 | Run unit tests                                                                            |
+| `npm run test:integration` | Run the actual-extension browser tests where Chrome, Brave, or test Chromium is available |
+| `npm run screenshots`      | Rebuild the extension and regenerate the README WebP screenshots with test Chromium       |
+| `npm run check`            | Typecheck, lint, unit tests, and production build                                         |
 
-For a visible native-window check, run `python3 -m http.server 4173 --directory tests/fixtures`, then `node scripts/manual-browser.mjs`; use the toolbar or Option+Shift+P in the isolated Chrome for Testing window. The script saves a preview screenshot to `docs/manual-preview.png`. Close the disposable window when finished.
+For integration tests, install Playwright Chromium with `npx playwright install chromium`. Chrome and Brave executable paths in the test configuration currently target macOS. The suite skips browser executables that are not installed; inspect [the test report](docs/test-report.md) for verified environments and cases.
+
+The README images are generated from the real unpacked extension on [`showcase.html`](tests/fixtures/showcase.html). They contain no third-party site content.
 
 ## Privacy and permissions
 
-- `activeTab`: temporary access to the tab where you invoke Precision, including screenshot capture.
-- `scripting`: inject the selector on request.
-- `clipboardWrite`: copy PNG on an explicit button click.
+Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It does not request broad website access, browsing history, persistent storage, or download permission. It does not upload screenshots, run analytics, or load remote code. See [the architecture notes](docs/architecture.md) for message validation, capture flow, and the coordinate model.
 
-No broad host access, storage, downloads permission, remote executable code or network requests. The full screenshot exists only transiently during cropping. The cropped PNG lives in the webpage's closed-shadow preview only for the current capture; closing it releases temporary image resources. There is deliberately no screenshot history.
+## Project notes
 
-Download uses a standard PNG link. The UI can report initiation, not completion or disk/OS failures; check browser Downloads. Filenames include a timestamp and random suffix.
+- [Architecture](docs/architecture.md)
+- [Milestone 01 plan](docs/milestone-01.md)
+- [Test report](docs/test-report.md)
+- [Known limitations](docs/known-limitations.md)
+- [MIT License](LICENSE)
 
-See [architecture](docs/architecture.md), [milestone plan](docs/milestone-01.md), [test report](docs/test-report.md) and [known limitations](docs/known-limitations.md). Nothing has been published or submitted to a store.
+Precision is in early development. Contributions and issue reports are welcome; please include browser version, operating system, and a reproducible page or test case for capture bugs. No store listing or release has been published.

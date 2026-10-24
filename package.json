@@ -10,6 +10,7 @@
     "lint": "eslint src tests scripts",
     "test": "vitest run",
     "test:integration": "playwright test",
+    "screenshots": "npm run build && node scripts/capture-readme-shots.mjs",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "format": "prettier --write src tests scripts public docs *.json *.ts *.js README.md"
   },

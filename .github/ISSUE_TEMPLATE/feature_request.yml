@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest an improvement to Precision
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What are you trying to do that Precision cannot do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful version of the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Privacy or browser considerations
+      description: Note any permissions or browser behaviors this may involve.
