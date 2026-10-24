@@ -5,18 +5,21 @@ These are the GitHub settings configured for the public `20was/precision` reposi
 ## `main` branch
 
 - Pull requests are required, including for administrators.
-- The `quality` GitHub Actions check must pass against the latest base branch.
+- The `quality` and `analyze` GitHub Actions checks must pass against the latest base branch.
 - All pull request conversations must be resolved.
 - Linear history is required; the repository accepts squash merges only and deletes merged branches.
 - Force pushes and branch deletion are blocked.
 - Required approving reviews are set to zero while this is a solo-maintainer project. This keeps the PR and CI gate usable without inventing a reviewer. Revisit the review count when additional maintainers are available.
+- A separate active ruleset prevents updating or deleting `v*` release tags.
 
 ## Automated checks
 
 - `CI` runs type checking, linting, unit tests, and production build on pushes to `main` and pull requests.
 - `CodeQL` scans TypeScript/JavaScript on pushes, pull requests, and a weekly schedule.
+- `OpenSSF Scorecard` reviews repository supply-chain practices weekly and uploads findings to GitHub code scanning. Results are not published to the external Scorecard API.
 - Dependabot checks npm dependencies and GitHub Actions weekly. Minor and patch npm updates are grouped to keep update PR volume manageable.
 - Actions are restricted to GitHub-owned actions and must use full commit SHAs. The workflows currently use pinned versions of checkout, setup-node, and CodeQL.
+- The only non-GitHub action allowed is the OpenSSF Scorecard action, also pinned to a full commit SHA.
 
 ## GitHub security features
 
