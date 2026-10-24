@@ -5,6 +5,7 @@
 
   <p>
     <a href="https://github.com/20was/precision/actions/workflows/ci.yml"><img src="https://github.com/20was/precision/actions/workflows/ci.yml/badge.svg" alt="Continuous integration" /></a>
+    <a href="https://github.com/20was/precision/actions/workflows/codeql.yml"><img src="https://github.com/20was/precision/actions/workflows/codeql.yml/badge.svg" alt="CodeQL analysis" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34352f.svg" alt="MIT License" /></a>
     <a href="https://github.com/20was/precision/releases"><img src="https://img.shields.io/badge/status-early%20development-c8ee65?labelColor=34352f" alt="Early development" /></a>
   </p>
@@ -92,6 +93,7 @@ Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It does not r
 - [Milestone 01 plan](docs/milestone-01.md)
 - [Test report](docs/test-report.md)
 - [Known limitations](docs/known-limitations.md)
+- [Repository security settings](docs/repository-security.md)
 - [MIT License](LICENSE)
 
 Precision is in early development. Contributions and issue reports are welcome; please include browser version, operating system, and a reproducible page or test case for capture bugs. No store listing or release has been published.
