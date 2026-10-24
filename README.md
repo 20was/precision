@@ -6,6 +6,7 @@
   <p>
     <a href="https://github.com/20was/precision/actions/workflows/ci.yml"><img src="https://github.com/20was/precision/actions/workflows/ci.yml/badge.svg" alt="Continuous integration" /></a>
     <a href="https://github.com/20was/precision/actions/workflows/codeql.yml"><img src="https://github.com/20was/precision/actions/workflows/codeql.yml/badge.svg" alt="CodeQL analysis" /></a>
+    <a href="https://github.com/20was/precision/actions/workflows/scorecard.yml"><img src="https://github.com/20was/precision/actions/workflows/scorecard.yml/badge.svg" alt="OpenSSF Scorecard" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34352f.svg" alt="MIT License" /></a>
     <a href="https://github.com/20was/precision/releases"><img src="https://img.shields.io/badge/status-early%20development-c8ee65?labelColor=34352f" alt="Early development" /></a>
   </p>
