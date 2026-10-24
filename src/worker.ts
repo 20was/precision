@@ -6,6 +6,7 @@ import {
   type CaptureMessage,
 } from "./shared/protocol";
 import { transition, type Phase } from "./shared/session";
+import { isSupportedPageUrl } from "./shared/page-url";
 interface Session {
   id: string;
   tab: number;
@@ -46,13 +47,7 @@ async function active(s: Session, requireFocus = true) {
 }
 async function begin(tabId: number) {
   const tab = await chrome.tabs.get(tabId);
-  if (
-    !tab.url ||
-    !/^https?:\/\//.test(tab.url) ||
-    /^https:\/\/(chromewebstore.google.com|chrome.google.com\/webstore)/.test(
-      tab.url,
-    )
-  )
+  if (!tab.url || !isSupportedPageUrl(tab.url))
     throw new Error(
       "This page cannot be selected. Open a regular http or https webpage; browser pages, the Web Store and PDFs are unsupported.",
     );

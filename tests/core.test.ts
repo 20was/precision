@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { intersect, cropPixels, validRect } from "../src/shared/geometry";
 import { isCapture } from "../src/shared/protocol";
 import { transition } from "../src/shared/session";
+import { isSupportedPageUrl } from "../src/shared/page-url";
 import { bounds, parentTarget, childTarget, targetAt } from "../src/target";
 const viewport = { width: 800, height: 600, scrollX: 0, scrollY: 0 };
 describe("geometry", () => {
@@ -103,6 +104,27 @@ describe("session transitions", () => {
     expect(transition("capturing", "cancelled")).toBe("cancelled");
     expect(() => transition("cancelled", "complete")).toThrow();
   });
+});
+describe("supported page URLs", () => {
+  it.each([
+    "https://example.com/article",
+    "http://localhost:3000/",
+    "https://chromewebstore.google.com.attacker.test/",
+    "https://notchrome.google.com/webstore",
+  ])("allows regular web URL %s", (url) =>
+    expect(isSupportedPageUrl(url)).toBe(true),
+  );
+  it.each([
+    "chrome://settings/",
+    "file:///tmp/page.html",
+    "javascript:alert(1)",
+    "not a URL",
+    "https://chromewebstore.google.com/detail/example",
+    "https://chrome.google.com/webstore/detail/example",
+    "https://chrome.google.com/webstore",
+  ])("rejects unsupported URL %s", (url) =>
+    expect(isSupportedPageUrl(url)).toBe(false),
+  );
 });
 describe("DOM navigation", () => {
   beforeEach(() => {
