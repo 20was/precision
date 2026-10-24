@@ -85,7 +85,7 @@ The README images are generated from the real unpacked extension on [`showcase.h
 
 ## Privacy and permissions
 
-Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It does not request broad website access, browsing history, persistent storage, or download permission. It does not upload screenshots, run analytics, or load remote code. See [the architecture notes](docs/architecture.md) for message validation, capture flow, and the coordinate model.
+Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It processes selected webpage content and screenshots locally only for the capture you request; it does not transmit or retain them. It does not request broad website access, browsing history, persistent storage, or download permission. See the [Privacy Policy](PRIVACY.md) and [architecture notes](docs/architecture.md) for details.
 
 ## Project notes
 
@@ -93,6 +93,8 @@ Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It does not r
 - [Milestone 01 plan](docs/milestone-01.md)
 - [Test report](docs/test-report.md)
 - [Known limitations](docs/known-limitations.md)
+- [Chrome Web Store listing draft](docs/store-listing.md)
+- [Privacy Policy](PRIVACY.md)
 - [Repository security settings](docs/repository-security.md)
 - [MIT License](LICENSE)
 

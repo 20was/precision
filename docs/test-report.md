@@ -4,7 +4,7 @@ Run on 2026-10-25 on Apple Silicon macOS. Tests used a local HTTP fixture server
 
 ## Automated outcomes
 
-- `npm run check`: pass — strict TypeScript, ESLint, 27 Vitest tests and production build.
+- `npm run check`: pass — strict TypeScript, ESLint, 38 Vitest tests and production build.
 - `npm run test:integration`: pass — 9 tests across Chromium 156.0.8078.4, Chrome 155.0.8059.85 and Brave 155.0.8059.40 (1.97.56).
 - Pixel capture, Clipboard API readback and downloaded PNG were verified at 100%, 125% and 150% browser zoom in all three browser families.
 - Build output: content 18,320 bytes; worker 5,962; popup 643; CSS 4,993; popup HTML 1,331; manifest 1,080; PNG icons 192 bytes. The former standalone preview page is no longer shipped.
