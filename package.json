@@ -1,0 +1,33 @@
+{
+  "name": "precision",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests scripts",
+    "test": "vitest run",
+    "test:integration": "playwright test",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "format": "prettier --write src tests scripts public docs *.json *.ts *.js README.md"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
+    "@types/chrome": "^0.3.6",
+    "@types/pngjs": "^6.0.5",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
+    "jsdom": "^30.1.3",
+    "pngjs": "^7.0.0",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

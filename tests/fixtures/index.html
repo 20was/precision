@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Precision fixtures</title
+  ><style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f5f6f8;
+      color: #172033;
+      font: 16px system-ui;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      padding: 12px;
+      background: #172033;
+      color: white;
+      z-index: 2;
+    }
+    nav {
+      position: fixed;
+      right: 0;
+      top: 80px;
+      background: #ddd;
+      padding: 12px;
+    }
+    main {
+      padding: 40px;
+    }
+    #solid {
+      width: 240px;
+      height: 160px;
+      background: rgb(32, 128, 192);
+      border: 0;
+      margin: 0;
+      padding: 0;
+      color: transparent;
+    }
+    article {
+      padding: 20px;
+      border: 1px solid #ccc;
+      margin: 20px 0;
+      max-width: 600px;
+    }
+    .clip {
+      width: 180px;
+      height: 80px;
+      overflow: hidden;
+    }
+    .clip div {
+      width: 300px;
+      height: 150px;
+      background: #9642ce;
+    }
+    .rotated {
+      transform: rotate(8deg);
+      background: #eabf45;
+      width: 180px;
+      height: 90px;
+    }
+    .dark {
+      background: #10151d;
+      color: white;
+      padding: 20px;
+    }
+    td {
+      padding: 10px;
+      border: 1px solid #ccc;
+    }
+    img {
+      width: 180px;
+      height: 90px;
+      object-fit: cover;
+    }
+    .partial {
+      position: fixed;
+      left: -30px;
+      bottom: -20px;
+      width: 130px;
+      height: 100px;
+      background: #c14260;
+    }
+    #long {
+      height: 1200px;
+    }
+    button {
+      padding: 12px;
+    }
+  </style>
+  <header>Sticky header</header>
+  <nav>Fixed navigation</nav>
+  <main>
+    <h1>Smart capture fixtures</h1>
+    <div id="solid" aria-label="Known solid rectangle"></div>
+    <article id="card">
+      <h2>Semantic card</h2>
+      <div>
+        <div>
+          <p>Deeply nested <strong>text target</strong></p>
+        </div>
+      </div>
+      <button id="action"><span>Click counter</span></button
+      ><output id="count">0</output><a href="#navigated">Test link</a>
+    </article>
+    <section class="clip"><div>Overflow clipped</div></section>
+    <p class="rotated">Transformed bounds</p>
+    <img
+      alt="Test object-fit"
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='100'%3E%3Cpath fill='%23327858' d='M0 0h300v100H0z'/%3E%3C/svg%3E"
+    />
+    <section class="dark">
+      <h2>Dark layout</h2>
+      <p>Contrast target</p>
+    </section>
+    <form>
+      <label>Name <input value="Example" /></label
+      ><textarea>Text area</textarea>
+      <p contenteditable="true">Editable content</p>
+    </form>
+    <iframe
+      title="Embedded fixture"
+      srcdoc="<h2>Frame content</h2><button>Frame button</button>"
+    ></iframe>
+    <div id="shadow"></div>
+    <table>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="long">Long scrolling content</div>
+  </main>
+  <div class="partial">Partially visible</div>
+  <script>
+    let count = 0;
+    document.querySelector("#action").onclick = () =>
+      (document.querySelector("#count").textContent = ++count);
+    const shadow = document
+      .querySelector("#shadow")
+      .attachShadow({ mode: "open" });
+    const p = document.createElement("p");
+    p.textContent = "Open Shadow DOM target";
+    shadow.append(p);
+    for (let i = 0; i < 45; i++) {
+      const tr = document.createElement("tr");
+      for (const text of [String(i + 1), "Table cell", "Another cell"]) {
+        const td = document.createElement("td");
+        td.textContent = text;
+        tr.append(td);
+      }
+      document.querySelector("#rows").append(tr);
+    }
+  </script>
+</html>

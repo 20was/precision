@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Precision \u2014 Smart Element Capture",
+  "description": "Select a webpage element and copy or download its visible pixels. Private, local screenshot capture.",
+  "version": "0.1.2",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting", "clipboardWrite"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Precision \u2014 capture an element",
+    "default_icon": {
+      "16": "icons/precision-16.png",
+      "32": "icons/precision-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "worker.js"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Alt+Shift+P"
+      },
+      "description": "Open Precision"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; connect-src 'none'"
+  },
+  "icons": {
+    "16": "icons/precision-16.png",
+    "32": "icons/precision-32.png",
+    "48": "icons/precision-48.png",
+    "128": "icons/precision-128.png"
+  }
+}
