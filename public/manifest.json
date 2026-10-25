@@ -1,13 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Precision \u2014 Smart Element Capture",
+  "name": "Precision — Smart Element Capture",
   "description": "Capture a custom area, page element, viewport or full page; compose, annotate, copy and download locally.",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "minimum_chrome_version": "120",
-  "permissions": ["activeTab", "scripting", "clipboardWrite"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "clipboardWrite"
+  ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Precision \u2014 capture an element",
+    "default_title": "Precision — capture an element",
     "default_icon": {
       "16": "icons/precision-16.png",
       "32": "icons/precision-32.png"
