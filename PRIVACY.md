@@ -8,6 +8,8 @@ Precision is a browser extension that captures the visible pixels of a webpage e
 
 When you start a capture, Precision reads the selected element's on-screen geometry and captures the visible browser tab so it can crop the selected area. The webpage content and resulting screenshot are processed locally in your browser. They are held temporarily in memory for the capture and, if you open the preview, until you close it or leave the page.
 
+While selection mode is active, Precision also reads pointer movement and position, your selection click, and supported keyboard commands. This input is used only to identify and confirm the target element. It is not recorded, retained, or transmitted. Selection ends when you capture or cancel.
+
 When you choose **Copy**, the resulting image is written to your system clipboard. When you choose **Download PNG**, the image is saved through your browser's download handling. These actions happen only when you request them.
 
 ## Collection and sharing

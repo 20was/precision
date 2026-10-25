@@ -31,7 +31,7 @@ Precision processes the selected page content and screenshot locally in your bro
 ## Dashboard disclosure notes
 
 - Single purpose: capture the visible pixels of a webpage element selected by the user, then copy or download that image on request.
-- Page content is accessed only after the user invokes the extension and starts selection. It is processed locally and not transmitted to the developer or a third party.
+- Page content and pointer/key input are accessed only after the user invokes the extension and starts selection. They are processed locally for target selection and capture, and are not transmitted to the developer or a third party.
 - Screenshot and geometry data are temporarily held in memory during the requested operation and discarded when the operation/preview ends.
 - No accounts, analytics, advertising, or remote code.
 - Permissions: `activeTab`, `scripting`, `clipboardWrite`.
