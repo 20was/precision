@@ -39,7 +39,9 @@ Observed under automated fixture load (not product-wide guarantees):
 - Full-page fixture action-to-editor time was approximately 3.2–3.7 seconds, depending on capture rate limiting and zoom.
 - `dist/` artifacts measured after build total approximately 107,666 bytes: content.js 47,694; editor.js 47,421; worker.js 12,932; popup.js 875; popup.html 2,332; ui.css 5,132; manifest.json 1,088; icons 192 bytes.
 
-Peak memory near the 40-megapixel cap, large real-world pages and long repeated-session trends were not measured. Heap numbers include the fixture page and harness and should not be interpreted as extension-only memory.
+Near-limit memory follow-up (macOS 26.6.2, Apple M4 Pro, 24 GB RAM, Playwright Chromium 156.0.8078.4, isolated extension profile): two successful 39.19 MP captures (2,400 × 16,328 px; 156,748,800 decoded RGBA bytes; approximately 844 KB PNG) took 9.5 s and 18.0 s from activation through export. macOS `footprint` sampled the test browser process tree every 0.2 s for 30 seconds (151 samples per run), with peaks of 2,471.3 MiB and 2,683.1 MiB. This is total browser-process-tree footprint, including GPU and renderer helpers, not extension-only memory. The large peak is a release risk; branded Chrome and Brave were not tested for this case, and memory behavior on lower-memory hardware is unknown.
+
+Existing cancellation JS-heap numbers include the fixture page and harness and should not be interpreted as extension-only memory. Long repeated-session memory trends were not measured.
 
 ## Not covered
 

@@ -20,7 +20,7 @@
 ## Remaining work before public beta
 
 1. Perform a screen-reader review with VoiceOver or NVDA; no screen reader is available in the automated test run. The annotation list has accessible object controls, while canvas pixels remain unstructured.
-2. Measure peak memory near the 40 MP limit and expand editor visual snapshots across small windows and light/dark themes.
+2. Investigate the approximately 2.5 GiB near-limit peak and validate an appropriate limit on lower-memory hardware before promoting 40 MP captures in public beta.
 3. Re-check current Web Store listing/privacy disclosures and owner certifications before any submission.
 
 ## Safe packaging and loading
@@ -37,4 +37,4 @@ Current status remains **PARTIAL** pending completion of the current full browse
 | Full-page handling | Lazy image decode, dynamic-height rejection/recovery, 125% zoom/DPR2 pixels, tall-output rejection and tab-switch cancellation/retry passed in Chromium, Chrome and Brave. | Animated content is captured per strip; nested scrolling is unsupported; fixed bottom content can repeat. |
 | Responsive editor | All three browser projects resized to 390 × 480; footer controls were geometrically verified within the footer. | No full matrix of window sizes, themes or native-window light/dark appearance. |
 | Accessibility | All three browser projects verified keyboard navigation, Escape, preview dialog semantics, focus wrapping and the annotation-object accessible name. | No screen reader run; canvas image content itself is not a structured accessible scene. |
-| Resource limits | 40 MP and 32,767 px dimension guards are documented; per-image decode wait is bounded to 1.5 s per strip / 12 s total. | Peak browser memory at the limit has not been measured. |
+| Resource limits | Two isolated Chromium samples completed 39.19 MP capture and PNG export. De-duplicated browser process-tree peaks were 2.41 and 2.62 GiB. | High peak on the 24 GB test host; lower-memory devices and branded Chrome/Brave near-limit behavior remain unmeasured. The pixel cap is not a demonstrated memory-safety threshold. |

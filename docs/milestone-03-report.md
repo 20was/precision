@@ -64,4 +64,12 @@ Automated Chromium checks cover keyboard-only selector activation/cancel, Tab tr
 
 ## Release assessment
 
-**PARTIAL.** Build, unit, dependency audit, full three-browser integration matrix and repeated Chrome stability sample pass. A real screen-reader review and peak-memory measurement remain outstanding, and documented limitations for nested scrolling, dynamic same-height content and fixed overlays remain. Keep these visible in release notes.
+**PARTIAL.** Build, unit, dependency audit, full three-browser integration matrix and repeated Chrome stability sample pass. A real screen-reader review remains outstanding. Near-limit process-tree memory has now been measured, but its high result requires investigation and lower-memory device validation. Documented limitations for nested scrolling, dynamic same-height content and fixed overlays remain.
+
+## Follow-up: near-limit memory sample (2026-10-25)
+
+- Added a macOS-only real-extension integration measurement using a uniquely named Playwright Chromium profile and the system `footprint` tool. It samples the isolated browser process tree (including renderer/GPU helpers) at 200 ms intervals; it does not claim extension-only attribution.
+- Two runs produced valid 39.19 MP PNGs (2,400 × 16,328 px, about 844 KB encoded, 156,748,800 decoded RGBA bytes). Activation-to-export took 9.5 s and 18.0 s; process-tree peaks were 2,471.3 MiB and 2,683.1 MiB, with 151 samples per run across 30 seconds (including the complete export and trailing open-editor interval).
+- Environment: macOS 26.6.2, Apple M4 Pro, 24 GB RAM, Playwright Chromium 156.0.8078.4. This peak is a release risk; branded Chrome/Brave and lower-memory systems have not been sampled. The current 40 MP limit bounds pixels but is not proven safe for all devices.
+- One initial measurement attempt timed out in the generic 10-second integration helper while progress still showed 83% completion. The measurement now uses the progress-ready path and a 45-second bounded editor/error wait for this near-cap fixture. A later measurement initially selected a stale Playwright profile; the fixture now launches a uniquely named profile. Do not count the stale-profile sample as evidence.
+- The overall status remains **PARTIAL**. VoiceOver remains untested; no screen-reader interaction review was completed.
