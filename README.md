@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/precision-banner.svg" alt="Precision — capture the part you actually need" width="100%" />
 
-  <p><strong>A local-first screenshot tool for Chrome and Brave.</strong><br />Capture the visible viewport, a page element, or a full page for annotation.</p>
+  <p><strong>A local-first screenshot tool for Chrome and Brave.</strong><br />Capture a page element, custom area, visible viewport, or full page for annotation.</p>
 
   <p>
     <a href="https://github.com/20was/precision/actions/workflows/ci.yml"><img src="https://github.com/20was/precision/actions/workflows/ci.yml/badge.svg" alt="Continuous integration" /></a>
@@ -23,6 +23,7 @@ Real screenshots of the unpacked extension running on the included local showcas
 ## What it does
 
 - Highlights useful DOM elements as you move the pointer.
+- Lets you drag over any visible part of a page, then copy it directly or open the in-page preview and editor.
 - Captures the current visible viewport in one step and opens it in the screenshot editor.
 - Copies a visible element capture directly from the pointer controls, or opens an in-page preview.
 - Adds pen, arrow, rectangle, text and spotlight annotations to the captured image, with color selection, undo and clear.
@@ -48,10 +49,10 @@ npm run build
 1. Open `chrome://extensions` in Chrome or `brave://extensions` in Brave.
 2. Turn on **Developer mode** and choose **Load unpacked**.
 3. Select the repository's `dist` folder.
-4. Pin Precision, open a regular webpage, and choose **Start selecting**, **Capture visible area**, **Capture full page**, or **Compose elements** from its toolbar popup.
-5. Hover an element. Choose **Copy** for an in-place copy, or **Preview** / press Enter to annotate, copy, or download.
+4. Pin Precision, open a regular webpage, and choose **Start selecting**, **Select an area**, **Capture visible area**, **Capture full page**, or **Compose elements** from its toolbar popup.
+5. For an area capture, drag across the visible page. Use the in-page **Copy** or **Preview** controls; Preview stays on the same webpage and offers annotation, copy, and download. For element selection, hover an element and choose **Copy** or **Preview** / press Enter.
 
-After rebuilding, reload Precision from the extensions page and refresh the webpage. **Capture visible area** opens the current viewport in the screenshot editor. Full-page capture supports vertical scrolling only and opens the editor in a new tab. Composition mode lets you add up to 24 visible element captures, then move, resize, reorder, remove, undo, annotate, copy, or download them from its editor tab. Browser internal pages, the Chrome Web Store, PDF viewers, and file URLs do not allow capture access.
+After rebuilding, reload Precision from the extensions page and refresh the webpage. **Select an area** and **Capture visible area** capture only visible viewport pixels and use the in-page toolbar/preview. Full-page capture supports vertical scrolling only and opens the editor in a new tab. Composition mode lets you add up to 24 visible element captures, then move, resize, reorder, remove, undo, annotate, copy, or download them from its editor tab. Browser internal pages, the Chrome Web Store, PDF viewers, and file URLs do not allow capture access.
 
 ## Keyboard controls
 

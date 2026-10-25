@@ -4,6 +4,18 @@ export interface Rect {
   width: number;
   height: number;
 }
+export interface Point {
+  x: number;
+  y: number;
+}
+export function rectFromPoints(a: Point, b: Point): Rect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    width: Math.abs(b.x - a.x),
+    height: Math.abs(b.y - a.y),
+  };
+}
 export interface Viewport {
   width: number;
   height: number;

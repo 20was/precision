@@ -14,7 +14,7 @@ interface Session {
   window: number;
   document?: string;
   phase: Phase;
-  mode: "element" | "fullPage" | "compose";
+  mode: "element" | "region" | "fullPage" | "compose";
   expires: number;
 }
 const sessions = new Map<number, Session>();
@@ -42,7 +42,7 @@ async function active(s: Session) {
       "Keep the selected page active in its browser window while capturing.",
     );
 }
-async function begin(tabId: number, mode: "element" | "fullPage" | "compose") {
+async function begin(tabId: number, mode: "element" | "region" | "fullPage" | "compose") {
   const tab = await chrome.tabs.get(tabId);
   if (!tab.url || !isSupportedPageUrl(tab.url))
     throw new Error(
@@ -56,7 +56,7 @@ async function begin(tabId: number, mode: "element" | "fullPage" | "compose") {
     window: tab.windowId,
     phase: "selecting",
     mode,
-    expires: Date.now() + (mode === "element" ? 120_000 : 15 * 60_000),
+    expires: Date.now() + (mode === "element" || mode === "region" ? 120_000 : 15 * 60_000),
   };
   sessions.set(tabId, s);
   try {
@@ -73,7 +73,7 @@ async function begin(tabId: number, mode: "element" | "fullPage" | "compose") {
     );
     setTimeout(() => {
       if (sessions.get(tabId) === s) void stop(s);
-    }, mode === "element" ? 120_000 : 15 * 60_000);
+    }, mode === "element" || mode === "region" ? 120_000 : 15 * 60_000);
   } catch (error) {
     await stop(s);
     throw error;
@@ -160,7 +160,7 @@ async function captureFrame(s: Session) {
 }
 async function capture(s: Session, message: CaptureMessage) {
   const composing = s.mode === "compose" && message.delivery === "composeItem";
-  if (!composing && s.mode !== "element")
+  if (!composing && s.mode !== "element" && s.mode !== "region")
     throw new Error("This capture action is not valid for the active mode.");
   while (capturing || Date.now() - lastCapture < 600) {
     if (!composing)
@@ -271,7 +271,7 @@ async function route(message: unknown, sender: chrome.runtime.MessageSender) {
     message.type === "start" &&
     sender.url === extensionUrl("popup.html") &&
     Number.isInteger(message.tab) &&
-    (message.mode === "element" || message.mode === "visible" || message.mode === "fullPage" || message.mode === "compose")
+      (message.mode === "element" || message.mode === "region" || message.mode === "visible" || message.mode === "fullPage" || message.mode === "compose")
   ) {
     if (message.mode === "visible") await captureVisibleViewport(message.tab as number);
     else await begin(message.tab as number, message.mode);
@@ -402,13 +402,14 @@ async function route(message: unknown, sender: chrome.runtime.MessageSender) {
   if (
     isCapture(message) &&
     ((s.mode === "element" && message.delivery !== "composeItem") ||
+      (s.mode === "region" && message.delivery !== "composeItem") ||
       (s.mode === "compose" && message.delivery === "composeItem"))
   ) {
     try {
       const value = await capture(s, message);
       return { ok: true, value };
     } finally {
-      if (s.mode === "element" && sessions.get(s.tab) === s) sessions.delete(s.tab);
+      if ((s.mode === "element" || s.mode === "region") && sessions.get(s.tab) === s) sessions.delete(s.tab);
     }
   }
   throw new Error("Invalid capture request.");

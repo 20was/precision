@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { intersect, cropPixels, validRect } from "../src/shared/geometry";
+import { intersect, cropPixels, rectFromPoints, validRect } from "../src/shared/geometry";
 import { isCapture } from "../src/shared/protocol";
 import { transition } from "../src/shared/session";
 import { isSupportedPageUrl } from "../src/shared/page-url";
@@ -7,6 +7,14 @@ import { canvasToClientPoint, clientToCanvasPoint, resizedAspectWidth } from "..
 import { bounds, parentTarget, childTarget, targetAt } from "../src/target";
 const viewport = { width: 800, height: 600, scrollX: 0, scrollY: 0 };
 describe("geometry", () => {
+  it("normalizes custom region drags in either direction", () => {
+    expect(rectFromPoints({ x: 120.5, y: 90.25 }, { x: 20.25, y: 10.5 })).toEqual({
+      x: 20.25,
+      y: 10.5,
+      width: 100.25,
+      height: 79.75,
+    });
+  });
   it("retains fractional visual viewport precision at 125% zoom", () => {
     expect(
       cropPixels(

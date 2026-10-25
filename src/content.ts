@@ -1,6 +1,6 @@
 import { Overlay, showError, showNotice, showPreview } from "./overlay";
 import { bounds, targetAt, parentTarget, childTarget } from "./target";
-import { sameGeometry, type Rect, type Viewport } from "./shared/geometry";
+import { rectFromPoints, sameGeometry, type Rect, type Viewport } from "./shared/geometry";
 import { record, token, type Result } from "./shared/protocol";
 import type { CompositionItem } from "./shared/composition";
 
@@ -356,6 +356,202 @@ function start(session: string, mode: "element" | "compose" = "element") {
   pointer = true;
   schedule();
 }
+function startRegion(session: string) {
+  disposeSelection();
+  const previouslyFocused = document.activeElement,
+    controller = new AbortController();
+  let done = false,
+    busy = false,
+    dragging = false,
+    origin = { x: 0, y: 0 },
+    current = { x: 0, y: 0 },
+    selected: Rect | null = null,
+    selectedViewport: Viewport | null = null,
+    captureRect: Rect | null = null,
+    captureViewport: Viewport | null = null,
+    cachedCapture: { png: string; width: number; height: number } | undefined;
+  const overlay = new Overlay({
+    cancel: () => cancel(),
+    preview: () => void capture("preview"),
+    copy: () => void capture("copy"),
+  }, "region");
+  overlay.host.style.touchAction = "none";
+  const notifyCancel = () => {
+    void chrome.runtime.sendMessage({ type: "cancel", session }).catch(() => {});
+  };
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    controller.abort();
+    if (disposeSelection === cancel) disposeSelection = () => {};
+    const restoreFocus = document.activeElement === overlay.host;
+    overlay.remove();
+    if (restoreFocus && previouslyFocused instanceof HTMLElement && previouslyFocused.isConnected)
+      previouslyFocused.focus({ preventScroll: true });
+  };
+  const cancel = () => {
+    notifyCancel();
+    cleanup();
+  };
+  disposeSelection = cancel;
+  const timer = setTimeout(cancel, 120_000);
+  const measure = (): Viewport => {
+    const v = visualViewport;
+    if (v && (Math.abs(v.scale - 1) > 0.001 || Math.abs(v.offsetLeft) > 0.01 || Math.abs(v.offsetTop) > 0.01))
+      throw new Error("Pinch zoom is not supported. Reset pinch zoom and try again.");
+    return {
+      width: (v?.width ?? innerWidth) + (innerWidth - document.documentElement.clientWidth),
+      height: (v?.height ?? innerHeight) + (innerHeight - document.documentElement.clientHeight),
+      scrollX,
+      scrollY,
+    };
+  };
+  const drawRect = () => rectFromPoints(origin, current);
+  const blockPage = (event: Event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  const capture = async (delivery: "preview" | "copy") => {
+    if (done || busy || !selected || !selectedViewport) return;
+    busy = true;
+    overlay.setCopyBusy(delivery === "copy");
+    overlay.hide();
+    try {
+      if (!cachedCapture) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        if (done) return;
+        captureRect = selected;
+        captureViewport = selectedViewport;
+        const response = (await chrome.runtime.sendMessage({
+          type: "capture",
+          session,
+          rect: captureRect,
+          viewport: captureViewport,
+          delivery: "preview",
+        })) as Result<{ delivery?: string; png?: string; width?: number; height?: number }>;
+        if (!response?.ok) throw new Error(response && !response.ok ? response.error : "Capture failed. Try again.");
+        const value = response.value;
+        if (value?.delivery !== "preview" || typeof value.png !== "string" || !Number.isInteger(value.width) || !Number.isInteger(value.height))
+          throw new Error("The selected area could not be prepared. Try again.");
+        cachedCapture = { png: value.png, width: value.width!, height: value.height! };
+      }
+      if (delivery === "copy") {
+        if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined")
+          throw new Error("Image copy is unavailable here. Choose Preview to use the editor instead.");
+        const raw = atob(cachedCapture.png.slice(cachedCapture.png.indexOf(",") + 1)),
+          bytes = Uint8Array.from(raw, (character) => character.charCodeAt(0));
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })]);
+        cleanup();
+        showNotice("Copied to clipboard");
+      } else {
+        cleanup();
+        scope.__precisionPreviewDispose = showPreview(cachedCapture.png, cachedCapture.width, cachedCapture.height, () => { scope.__precisionPreviewDispose = undefined; });
+      }
+    } catch (error) {
+      if (done) return;
+      if (cachedCapture) {
+        busy = false;
+        overlay.setCopyBusy(false);
+        overlay.setRegionReady(true);
+        overlay.show(selected, "", selected.x + selected.width / 2, selected.y + selected.height / 2);
+        overlay.setMessage(error instanceof Error ? `${error.message} You can still preview this area.` : "Copy failed. You can still preview this area.");
+      } else {
+        notifyCancel();
+        cleanup();
+        showError(error instanceof Error ? error.message : "Capture failed. Try selecting the area again.");
+      }
+    }
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    if (overlay.isToolbarPoint(event.clientX, event.clientY)) return;
+    blockPage(event);
+    if (done || busy || !event.isPrimary || event.button !== 0) return;
+    if (cachedCapture) {
+      overlay.setMessage("This capture is ready. Preview it, or press Escape and start again.");
+      return;
+    }
+    dragging = true;
+    origin = current = {
+      x: Math.max(0, Math.min(innerWidth, event.clientX)),
+      y: Math.max(0, Math.min(innerHeight, event.clientY)),
+    };
+    selected = null;
+    selectedViewport = null;
+    cachedCapture = undefined;
+    overlay.setRegionReady(false);
+    try { overlay.host.setPointerCapture(event.pointerId); } catch { /* capture may not be available on synthetic pointer events */ }
+  };
+  const onPointerMove = (event: PointerEvent) => {
+    if (!dragging || done) return;
+    blockPage(event);
+    current = { x: Math.max(0, Math.min(innerWidth, event.clientX)), y: Math.max(0, Math.min(innerHeight, event.clientY)) };
+    const rect = drawRect();
+    overlay.show({ ...rect, width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+  };
+  const onPointerUp = (event: PointerEvent) => {
+    if (!dragging || done) return;
+    blockPage(event);
+    current = { x: Math.max(0, Math.min(innerWidth, event.clientX)), y: Math.max(0, Math.min(innerHeight, event.clientY)) };
+    dragging = false;
+    const rect = drawRect();
+    if (rect.width < 2 || rect.height < 2) {
+      overlay.setMessage("Drag at least 2 px in both directions to select an area.");
+      return;
+    }
+    try {
+      selectedViewport = measure();
+      selected = rect;
+      overlay.setRegionReady(true);
+      overlay.show(rect, "", current.x, current.y);
+    } catch (error) {
+      notifyCancel();
+      cleanup();
+      showError(error instanceof Error ? error.message : "This area cannot be captured.");
+    }
+  };
+  const onPageAction = (event: Event) => {
+    const mouse = event as MouseEvent;
+    if (overlay.isToolbarPoint(mouse.clientX, mouse.clientY)) return;
+    blockPage(event);
+  };
+  for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "contextmenu"])
+    window.addEventListener(name, (name === "pointerdown" ? onPointerDown : name === "pointerup" ? onPointerUp : onPageAction) as EventListener, { capture: true, signal: controller.signal });
+  window.addEventListener("pointermove", onPointerMove, { capture: true, signal: controller.signal });
+  window.addEventListener("keydown", (event) => {
+    const key = event as KeyboardEvent;
+    if (key.key === "Escape") {
+      blockPage(event);
+      cancel();
+    } else if (key.key === "Enter" && selected && !overlay.isControlFocused()) {
+      blockPage(event);
+      void capture("preview");
+    }
+  }, { capture: true, signal: controller.signal });
+  window.addEventListener("scroll", cancel, { capture: true, signal: controller.signal });
+  window.addEventListener("resize", cancel, { signal: controller.signal });
+  window.addEventListener("blur", cancel, { signal: controller.signal });
+  window.addEventListener("pagehide", cancel, { signal: controller.signal });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) cancel(); }, { signal: controller.signal });
+  const onMessage = (message: unknown, sender: chrome.runtime.MessageSender, reply: (value: unknown) => void) => {
+    if (sender.id !== chrome.runtime.id || !record(message) || message.session !== session) return;
+    if (message.type === "cancelSelection") {
+      cancel();
+      reply({ ok: true });
+    } else if (message.type === "verify") {
+      let valid = false;
+      try {
+        const now = measure();
+        valid = !done && !!selected && !!captureRect && sameGeometry(selected, captureRect) && !!selectedViewport &&
+          Object.keys(now).every((key) => now[key as keyof Viewport] === captureViewport?.[key as keyof Viewport]);
+      } catch { /* invalid viewport means the capture must fail closed */ }
+      reply({ ok: valid });
+    }
+  };
+  chrome.runtime.onMessage.addListener(onMessage);
+  controller.signal.addEventListener("abort", () => chrome.runtime.onMessage.removeListener(onMessage), { once: true });
+  overlay.focusSelection();
+}
 function startFullPage(session: string) {
   let cancelled = false,
     finished = false,
@@ -641,6 +837,7 @@ const listener = (
   )
     return;
   if (message.mode === "fullPage") startFullPage(message.session);
+  else if (message.mode === "region") startRegion(message.session);
   else start(message.session, message.mode === "compose" ? "compose" : "element");
   reply({ ok: true });
 };

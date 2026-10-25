@@ -7,7 +7,7 @@ for (const button of buttons) button.addEventListener("click", () => {
   void (async () => {
     for (const candidate of buttons) candidate.disabled = true;
     const mode = button.dataset.mode as StartMode;
-    status.textContent = mode === "fullPage" ? "Preparing full-page capture…" : mode === "compose" ? "Starting composition…" : mode === "visible" ? "Capturing visible area…" : "Starting selection…";
+    status.textContent = mode === "fullPage" ? "Preparing full-page capture…" : mode === "compose" ? "Starting composition…" : mode === "visible" ? "Capturing visible area…" : mode === "region" ? "Preparing area selection…" : "Starting selection…";
     try {
       const [tab] = await chrome.tabs.query({
         active: true,

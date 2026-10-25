@@ -68,6 +68,7 @@ Final command: `npm run test:integration` — 30 passed across three real-extens
 | Small/short composition editor window | Verified, all three engines | Real browser window resized to 390 × 480 CSS px; footer buttons remain inside the footer bounds. This does not cover all light/dark combinations or every desktop OS. |
 | Keyboard selection and preview | Verified, all three engines | Selection host receives initial focus; Tab cycles selector controls; Escape cancels; preview exposes a dialog and named copy/download controls with focus wrapping. |
 | Annotation list semantics | Verified, all three engines | The editable annotation object is exposed as a named button in the accessibility tree after the list is expanded; keyboard editing is exercised. |
+| Custom region capture | Verified in Chromium, Chrome and Brave | Drag in both directions, direct in-page Copy, in-page Preview, Escape cleanup and post-cancel webpage interaction pass. Clipboard and preview PNG pixels are checked at 200 × 160 px with ±1 RGB channel tolerance for browser screenshot color conversion. |
 | Near-limit full-page memory | Verified twice in bundled Chromium on macOS | 39.19 MP capture/export completed both times; de-duplicated test browser process-tree peaks were 2.41 and 2.62 GiB. Chrome and Brave are not measured for this case; see `test-report.md`. |
 | Screen-reader workflow | Not tested | No assistive technology was run. Automated accessibility tree inspection is not a substitute for VoiceOver/NVDA testing. |
 
