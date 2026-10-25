@@ -14,16 +14,16 @@
 ## Issues and limits
 
 - Canvas accessibility is limited: the screenshot is a labelled canvas, not a structured accessible representation of the pixels or annotations. Keyboard shortcuts and side controls help but do not replace assistive-technology testing.
-- Composition selection, hit testing, movement, and resizing have more complex interactions than the simple selection path. The current real-browser coverage verifies basic resize/move and undo/redo but does not cover dense overlaps or all zoom levels.
-- Composition resize uses one bottom-right handle and preserves the source aspect ratio; edge/corner handles and freeform resizing are not present.
-- Annotation marks are canvas-based. Rectangle and text editing/export have browser coverage; pen, arrow, and spotlight need dedicated pixel expectation tests before relying on their output fidelity.
+- Composition selection, hit testing, movement, resize, reorder, removal, and history now have deterministic real-browser overlap coverage. The topmost source receives a hit, and source stacking order follows the source list.
+- Composition resize uses one bottom-right handle and preserves the source aspect ratio; edge/corner handles and freeform resizing are not present. Vertical-only pointer movement now changes size proportionally.
+- Annotation marks remain canvas-based. Pen, arrow, rectangle, text and spotlight have decoded image-content assertions, including text edit/move and history. See [editor-precision-report.md](editor-precision-report.md).
 - Mobile-sized browser windows use responsive CSS, but keyboard/focus and actual control usability on a 390px editor were not exhaustively tested.
 - Success/error copy and controls use the existing neutral direction. This audit did not introduce a visual redesign.
 
 ## Recommendations before public beta
 
 1. Run a short screen-reader and keyboard-only review of both editor surfaces.
-2. Add deterministic real-browser tests for overlapping composition objects and all annotation tools' exported pixels.
-3. Capture and inspect editor screenshots at a small and standard window size in both light and dark modes, with empty/one/many layers.
+2. Exercise screen-reader semantics and keyboard-only workflows with assistive technology; canvas pixels are still not exposed as structured accessible content.
+3. Expand visual snapshots to small windows and light/dark appearances with empty, one, and many objects. Current golden coverage is one Chromium desktop composition state.
 
 These are validation tasks, not claims of known data corruption.

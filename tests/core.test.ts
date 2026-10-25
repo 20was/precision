@@ -3,6 +3,7 @@ import { intersect, cropPixels, validRect } from "../src/shared/geometry";
 import { isCapture } from "../src/shared/protocol";
 import { transition } from "../src/shared/session";
 import { isSupportedPageUrl } from "../src/shared/page-url";
+import { canvasToClientPoint, clientToCanvasPoint, resizedAspectWidth } from "../src/shared/editor-geometry";
 import { bounds, parentTarget, childTarget, targetAt } from "../src/target";
 const viewport = { width: 800, height: 600, scrollX: 0, scrollY: 0 };
 describe("geometry", () => {
@@ -73,6 +74,30 @@ describe("geometry", () => {
     expect(() =>
       cropPixels({ x: 0, y: 0, width: 10, height: 10 }, viewport, 10000, 10000),
     ).toThrow());
+});
+describe("editor world coordinates", () => {
+  it.each([0.5, 1, 1.5, 2])("round-trips pointer coordinates at display scale %s", (scale) => {
+    const rect = { left: 17.25, top: 31.5, width: 640 * scale, height: 360 * scale };
+    const world = { x: 123.75, y: 271.5 };
+    const client = canvasToClientPoint(world, rect, 640, 360)!;
+    expect(clientToCanvasPoint(client.x, client.y, rect, 640, 360)).toEqual(world);
+  });
+  it("clamps client positions to the canvas edge", () => {
+    expect(clientToCanvasPoint(-100, 900, { left: 10, top: 20, width: 200, height: 100 }, 400, 200)).toEqual({ x: 0, y: 200 });
+  });
+  it("rejects degenerate transforms", () => {
+    expect(clientToCanvasPoint(1, 2, { left: 0, top: 0, width: 0, height: 20 }, 40, 20)).toBeNull();
+    expect(canvasToClientPoint({ x: NaN, y: 0 }, { left: 0, top: 0, width: 10, height: 10 }, 10, 10)).toBeNull();
+  });
+  it("uses vertical or horizontal movement for aspect-locked resize", () => {
+    expect(resizedAspectWidth(120, 2, 0, 20, 400)).toBe(160);
+    expect(resizedAspectWidth(120, 2, 20, 0, 400)).toBe(140);
+    expect(resizedAspectWidth(120, 2, 20, 10, 400)).toBe(140);
+  });
+  it("keeps aspect-resize within its canvas bounds and minimum", () => {
+    expect(resizedAspectWidth(120, 2, 500, 0, 150)).toBe(150);
+    expect(resizedAspectWidth(120, 2, -500, 0, 150)).toBe(32);
+  });
 });
 describe("protocol", () => {
   const good = {
