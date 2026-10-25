@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Precision full-page fixture</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body { font: 16px system-ui, sans-serif; }
+      header { position: sticky; z-index: 5; top: 0; height: 72px; padding: 24px; background: #172033; color: white; }
+      nav { position: fixed; z-index: 4; right: 0; top: 45%; padding: 10px; color: #111; background: #ddd; }
+      main { margin: 0; padding: 0; }
+      section { display: grid; place-items: center; height: 520px; color: white; font-size: 32px; font-weight: 700; }
+      #red { background: #d33b42; }
+      #green { background: #22815b; }
+      #yellow { background: #d6a52b; }
+      #blue { background: #3269bd; }
+      #transformed { width: 260px; height: 100px; display: grid; place-items: center; background: #683e9c; transform: rotate(-1deg); }
+      body.short section { height: 240px; }
+    </style>
+  </head>
+  <body>
+    <header>Sticky fixture header</header>
+    <nav>Fixed side control</nav>
+    <main>
+      <section id="red">RED BAND</section>
+      <section id="green">GREEN BAND</section>
+      <section id="yellow"><div id="transformed">TRANSFORMED</div></section>
+      <section id="blue">BLUE BAND</section>
+    </main>
+    <script>
+      if (new URLSearchParams(location.search).has("short")) {
+        document.body.classList.add("short");
+        document.querySelectorAll("main section:not(#red)").forEach((section) => section.remove());
+      }
+    </script>
+  </body>
+</html>

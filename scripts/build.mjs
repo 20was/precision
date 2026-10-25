@@ -8,6 +8,7 @@ const options = {
     "src/worker.ts",
     "src/content.ts",
     "src/popup.ts",
+    "src/editor.ts",
   ],
   outdir: "dist",
   bundle: true,

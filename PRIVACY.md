@@ -2,11 +2,13 @@
 
 **Last updated: October 25, 2026**
 
-Precision is a browser extension that captures the visible pixels of a webpage element selected by you.
+Precision is a browser extension that captures visible webpage elements or a vertically scrolling full page when you request it.
 
 ## Information processed
 
-When you start a capture, Precision reads the selected element's on-screen geometry and captures the visible browser tab so it can crop the selected area. The webpage content and resulting screenshot are processed locally in your browser. They are held temporarily in memory for the capture and, if you open the preview, until you close it or leave the page.
+When you start an element capture, Precision reads the selected element's on-screen geometry and captures the visible browser tab so it can crop the selected area. For a full-page capture, it scrolls the page in viewport-sized segments and stitches the resulting viewport images locally. Full-page images are limited to 40 megapixels and vertically scrolling pages. The result is opened in a new extension editor tab.
+
+Full-page image data and multi-element composition packages are briefly stored in extension-origin IndexedDB as numbered chunks so large captures do not need to be placed in a URL or sent through one oversized message. The editor reads and deletes these chunks when it opens. If the editor cannot consume an interrupted transfer, the data remains local until its browser data is cleared; it is not uploaded or used as screenshot history. Screenshots and element images are also held in memory while the relevant capture/editor is open and discarded when that workflow ends.
 
 While selection mode is active, Precision also reads pointer movement and position, your selection click, and supported keyboard commands. This input is used only to identify and confirm the target element. It is not recorded, retained, or transmitted. Selection ends when you capture or cancel.
 

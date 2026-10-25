@@ -92,6 +92,12 @@ button:disabled {
   border-color: var(--muted);
   opacity: 0.88;
 }
+.popup button[data-mode] + button[data-mode] {
+  margin-top: 8px;
+}
+.popup button[data-mode="fullPage"]:hover {
+  background: var(--bg);
+}
 .popup {
   width: 288px;
   padding: 18px;

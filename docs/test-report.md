@@ -1,26 +1,46 @@
-# Milestone 01 test report
+# Production reliability test report
 
-Run on 2026-10-25 on Apple Silicon macOS. Tests used a local HTTP fixture server, isolated browser profiles, the production `dist` build, the actual toolbar popup and `chrome.tabs.captureVisibleTab`. Screenshot capture was not mocked. Only test profiles received `clipboard-read`; production permissions remain unchanged.
+**Run date:** 2026-10-25
 
-## Automated outcomes
+**Host:** Apple Silicon macOS
 
-- `npm run check`: pass — strict TypeScript, ESLint, 38 Vitest tests and production build.
-- `npm run test:integration`: pass — 9 tests across Chromium 156.0.8078.4, Chrome 155.0.8059.85 and Brave 155.0.8059.40 (1.97.56).
-- Pixel capture, Clipboard API readback and downloaded PNG were verified at 100%, 125% and 150% browser zoom in all three browser families.
-- Build output: content 18,320 bytes; worker 5,962; popup 643; CSS 4,993; popup HTML 1,331; manifest 1,080; PNG icons 192 bytes. The former standalone preview page is no longer shipped.
+**Build:** 0.1.6 production `dist/` extension
 
-## Pixel and interaction evidence
+**Browsers:** Playwright Chromium 156.0.8078.4, Google Chrome 155.0.8059.85, Brave 155.0.8059.40 (1.97.56)
 
-A fixed fixture rectangle at CSS x=40, y=140, width=240 and height=160 used solid RGB (32,128,192). With the test browser configured for device scale factor 2, exports at 100%, 125% and 150% measured 480×320, 600×400 and 720×480. Clipboard and downloaded PNG data were decoded and every pixel matched the expected color in Chromium, Chrome and Brave. This also verified that the selector overlay was excluded from the result.
+The browser tests use isolated profiles, local fixtures, the real toolbar popup and extension service worker, and actual `chrome.tabs.captureVisibleTab` results. Capture is not mocked. Test profiles grant `clipboard-read` only to inspect real clipboard output; that permission is not in the production manifest.
 
-The tests exercised direct Copy without opening a tab, same-page Preview, Close, Escape cancellation, keyboard parent/child navigation, page-action suppression, small-button control placement without target overlap, control-origin click routing, and preservation of the selected button when opening Preview. The small button remained at zero activations. Tests also covered semantic and deeply nested HTML, scrolling, sticky and fixed elements, clipping, transformed bounds, `object-fit`, dark content, forms, contenteditable, iframe boundary selection, open Shadow DOM, large tables, repeated activation and navigation cleanup.
+## Commands and outcomes
 
-Fixture matrix: verified visible capture for semantic HTML, nesting, sticky/fixed UI, rectangular clipping, object-fit images, dark content, tables, forms, contenteditable, iframe boundary, open Shadow DOM and partially offscreen targets. Transformed geometry was verified as a rectangular approximation. Pinch zoom, closed Shadow DOM internals, screen readers, Chrome 120 and multi-monitor changes were not tested; see [known limitations](known-limitations.md).
+- `npm run check` — passed: TypeScript strict typecheck, ESLint, 38 Vitest unit tests, production build.
+- `npm run test:integration` — passed: 24/24 tests across Chromium, Chrome and Brave (full run completed after the focus-guard fix).
+- `npm audit --audit-level=moderate` — passed: zero reported vulnerabilities at audit time.
 
-## Measurements
+An earlier full run exposed browser-dependent focus handling; individual retries passed, so that result was not treated as evidence of a fix. The worker's additional `windows.get().focused` requirement was removed while retaining live-session, active-tab, original-window, navigation and focus-change checks. After this change, the representative Brave fixture passed and the complete 24-test cross-browser run passed.
 
-On the test host, recent full-suite runs measured the browser screenshot call at roughly 45–52 ms and crop/export at roughly 26–45 ms for the fixture capture. These are worker event durations under automated headless load, not product-wide performance guarantees. Ten synthetic pointer steps plus two animation frames took roughly 169–200 ms end-to-end through Playwright. Heap after five cancellation cycles and forced collection was about 2.3 MB versus a 1.5 MB Chromium baseline, 2.3 MB versus 1.5 MB in Chrome, and 2.5 MB versus 1.9 MB in Brave. These values include page, fixture and test harness memory; they do not isolate extension allocations. Peak memory near the 40-megapixel input limit was not measured.
+## Screenshot and interaction evidence
 
-The UI direction follows Apple's guidance to keep contextual actions small and source-adjacent and avoid unnecessary context switches: [Popovers](https://developer.apple.com/design/human-interface-guidelines/popovers/), [Modality](https://developer.apple.com/design/human-interface-guidelines/modality/). The selection control moves beside a small target when it would otherwise obscure it; hover retargeting continues outside the control boundary. Actual browser pointer events verify target visibility, Preview, direct Copy and that clicking the selected site button does not activate it.
+- Element capture: actual downloaded and clipboard PNG pixels were decoded and compared at 100%, 125% and 150% browser zoom with forced device scale factor 2. Fixture dimensions/colors matched. Chrome, Brave and Chromium covered semantic and deeply nested HTML, scroll/sticky/fixed content, clipping, transforms, `object-fit`, dark content, tables, form/contenteditable, iframe boundary, open Shadow DOM, partially offscreen targets, repeated activation and navigation cleanup.
+- Full-page: long colored bands, sticky header, fixed sidebar, transformed content, short page, 125% zoom and scale factor 2. Tests decode the output PNG and verify dimensions/band colors, scroll restoration, cancellation cleanup, and no editor opening after cancellation. The final fractional-scroll remainder fix prevents a 99%-complete loop from stalling.
+- Composition: repeated capture of two elements; resize, keyboard move, undo/redo; rectangle annotation and text creation/editing; downloaded PNG checks; actual clipboard PNG decoded and compared with download pixel-for-pixel. Existing integration suite ran these flows in all three engines.
+- Visible viewport: real API screenshot returned and opened in the editor. Output dimensions are read from the bitmap, not inferred by multiplying CSS dimensions by DPR. Headless Brave returned a bitmap 9 CSS pixels shorter than `innerHeight`; this is recorded as environment/browser variation.
+- Cancellation: Escape, repeated sessions, page navigation, full-page interruption and editor close cleanup are covered by integration cases.
 
-Test artifacts are in ignored `test-results/`. Run `npm run test:integration` to regenerate them.
+The app content script uses animation-frame synchronization and post-capture geometry validation. Fixture screenshots do not freeze arbitrary site animations or prove pixel-exact behavior for every layout.
+
+## Performance observations
+
+Observed under automated fixture load (not product-wide guarantees):
+
+- `captureVisibleTab`: approximately 44–95 ms.
+- Crop/export/handoff: approximately 29–334 ms, with test-host scheduling jitter.
+- Ten synthetic pointer steps plus two animation frames: approximately 177–209 ms end-to-end through Playwright.
+- After five cancellation cycles and forced collection, page-plus-test heap was approximately 1.54→2.30 MB (Chromium), 1.54→2.29 MB (Chrome), and 1.90→2.54 MB (Brave). This is not extension-isolated memory profiling.
+- Full-page fixture action-to-editor time was approximately 3.2–3.7 seconds, depending on capture rate limiting and zoom.
+- `dist/` artifacts measured after build total approximately 107,666 bytes: content.js 47,694; editor.js 47,421; worker.js 12,932; popup.js 875; popup.html 2,332; ui.css 5,132; manifest.json 1,088; icons 192 bytes.
+
+Peak memory near the 40-megapixel cap, large real-world pages and long repeated-session trends were not measured. Heap numbers include the fixture page and harness and should not be interpreted as extension-only memory.
+
+## Not covered
+
+Screen-reader testing, multi-monitor transitions, non-macOS systems, minimum Chrome 120, full-page nested scroll containers, lazy-load stabilization on arbitrary sites, near-limit images, every annotation tool's pixel output, dense overlapping composition selection, and every editor operation at multiple zooms still need verification. See [browser-test-matrix.md](browser-test-matrix.md), [known-limitations.md](known-limitations.md), and [release-readiness.md](release-readiness.md).

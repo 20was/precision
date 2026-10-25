@@ -1,10 +1,13 @@
-import type { Result } from "./shared/protocol";
-const button = document.querySelector<HTMLButtonElement>("#start")!;
+import type { Result, StartMode } from "./shared/protocol";
+const buttons = Array.from(
+  document.querySelectorAll<HTMLButtonElement>("[data-mode]"),
+);
 const status = document.querySelector<HTMLElement>("#status")!;
-button.addEventListener("click", () => {
+for (const button of buttons) button.addEventListener("click", () => {
   void (async () => {
-    button.disabled = true;
-    status.textContent = "Starting selection…";
+    for (const candidate of buttons) candidate.disabled = true;
+    const mode = button.dataset.mode as StartMode;
+    status.textContent = mode === "fullPage" ? "Preparing full-page capture…" : mode === "compose" ? "Starting composition…" : mode === "visible" ? "Capturing visible area…" : "Starting selection…";
     try {
       const [tab] = await chrome.tabs.query({
         active: true,
@@ -15,6 +18,7 @@ button.addEventListener("click", () => {
       const result = (await chrome.runtime.sendMessage({
         type: "start",
         tab: tab.id,
+        mode,
       })) as Result;
       if (!result?.ok)
         throw new Error(
@@ -27,7 +31,7 @@ button.addEventListener("click", () => {
       status.textContent =
         error instanceof Error ? error.message : "Could not start selection.";
       status.dataset.error = "true";
-      button.disabled = false;
+      for (const candidate of buttons) candidate.disabled = false;
     }
   })();
 });
