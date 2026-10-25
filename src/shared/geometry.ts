@@ -8,12 +8,43 @@ export interface Point {
   x: number;
   y: number;
 }
+export type RectCorner = "nw" | "ne" | "sw" | "se";
 export function rectFromPoints(a: Point, b: Point): Rect {
   return {
     x: Math.min(a.x, b.x),
     y: Math.min(a.y, b.y),
     width: Math.abs(b.x - a.x),
     height: Math.abs(b.y - a.y),
+  };
+}
+/** Resize one corner while keeping the opposite corner fixed and inside bounds. */
+export function resizeRectFromCorner(
+  rect: Rect,
+  corner: RectCorner,
+  point: Point,
+  bounds: Pick<Rect, "x" | "y" | "width" | "height">,
+  minimum = 2,
+): Rect {
+  const left = rect.x;
+  const top = rect.y;
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+  const min = Math.max(1, minimum);
+  const isWest = corner.endsWith("w");
+  const isNorth = corner.startsWith("n");
+  const anchorX = isWest ? right : left;
+  const anchorY = isNorth ? bottom : top;
+  const x = isWest
+    ? Math.max(bounds.x, Math.min(anchorX - min, point.x))
+    : Math.max(anchorX + min, Math.min(bounds.x + bounds.width, point.x));
+  const y = isNorth
+    ? Math.max(bounds.y, Math.min(anchorY - min, point.y))
+    : Math.max(anchorY + min, Math.min(bounds.y + bounds.height, point.y));
+  return {
+    x: Math.min(x, anchorX),
+    y: Math.min(y, anchorY),
+    width: Math.abs(anchorX - x),
+    height: Math.abs(anchorY - y),
   };
 }
 export interface Viewport {

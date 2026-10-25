@@ -29,6 +29,7 @@
 
 - Area selection is limited to a rectangle within the current visible viewport. Scrolling, resizing the viewport, pinch zoom, navigation, or tab deactivation cancels the selection; scrolling capture remains the separate full-page workflow.
 - The webpage is temporarily shielded from pointer actions while selecting so drag gestures do not activate links or controls. The selector is removed on Escape, successful copy/preview, navigation, or recoverable failure.
+- Four visible corner handles refine the selected rectangle before capture. Resizing keeps the opposite corner fixed, remains within the visible viewport, and enforces a 2 CSS-pixel minimum; side-only resize handles are not provided.
 
 ## Multi-element composition
 

@@ -1,6 +1,6 @@
 import { Overlay, showError, showNotice, showPreview } from "./overlay";
 import { bounds, targetAt, parentTarget, childTarget } from "./target";
-import { rectFromPoints, sameGeometry, type Rect, type Viewport } from "./shared/geometry";
+import { rectFromPoints, resizeRectFromCorner, sameGeometry, type Rect, type RectCorner, type Viewport } from "./shared/geometry";
 import { record, token, type Result } from "./shared/protocol";
 import type { CompositionItem } from "./shared/composition";
 
@@ -363,6 +363,8 @@ function startRegion(session: string) {
   let done = false,
     busy = false,
     dragging = false,
+    dragKind: "select" | "resize" = "select",
+    resizeCorner: RectCorner | null = null,
     origin = { x: 0, y: 0 },
     current = { x: 0, y: 0 },
     selected: Rect | null = null,
@@ -408,6 +410,7 @@ function startRegion(session: string) {
     };
   };
   const drawRect = () => rectFromPoints(origin, current);
+  const viewportBounds = () => ({ x: 0, y: 0, width: innerWidth, height: innerHeight });
   const blockPage = (event: Event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -465,6 +468,18 @@ function startRegion(session: string) {
   };
   const onPointerDown = (event: PointerEvent) => {
     if (overlay.isToolbarPoint(event.clientX, event.clientY)) return;
+    const corner = overlay.regionHandleAt(event.clientX, event.clientY);
+    if (corner) {
+      blockPage(event);
+      if (done || busy || !event.isPrimary || event.button !== 0 || !selected) return;
+      dragKind = "resize";
+      resizeCorner = corner;
+      dragging = true;
+      overlay.focusRegionHandle(corner);
+      overlay.setRegionReady(false, true);
+      try { overlay.host.setPointerCapture(event.pointerId); } catch { /* pointer capture may be unavailable */ }
+      return;
+    }
     blockPage(event);
     if (done || busy || !event.isPrimary || event.button !== 0) return;
     if (cachedCapture) {
@@ -472,6 +487,7 @@ function startRegion(session: string) {
       return;
     }
     dragging = true;
+    dragKind = "select";
     origin = current = {
       x: Math.max(0, Math.min(innerWidth, event.clientX)),
       y: Math.max(0, Math.min(innerHeight, event.clientY)),
@@ -486,7 +502,9 @@ function startRegion(session: string) {
     if (!dragging || done) return;
     blockPage(event);
     current = { x: Math.max(0, Math.min(innerWidth, event.clientX)), y: Math.max(0, Math.min(innerHeight, event.clientY)) };
-    const rect = drawRect();
+    const rect = dragKind === "resize" && selected && resizeCorner
+      ? resizeRectFromCorner(selected, resizeCorner, current, viewportBounds())
+      : drawRect();
     overlay.show({ ...rect, width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
   };
   const onPointerUp = (event: PointerEvent) => {
@@ -494,9 +512,18 @@ function startRegion(session: string) {
     blockPage(event);
     current = { x: Math.max(0, Math.min(innerWidth, event.clientX)), y: Math.max(0, Math.min(innerHeight, event.clientY)) };
     dragging = false;
-    const rect = drawRect();
+    const rect = dragKind === "resize" && selected && resizeCorner
+      ? resizeRectFromCorner(selected, resizeCorner, current, viewportBounds())
+      : drawRect();
+    const resizing = dragKind === "resize";
+    dragKind = "select";
+    resizeCorner = null;
     if (rect.width < 2 || rect.height < 2) {
       overlay.setMessage("Drag at least 2 px in both directions to select an area.");
+      if (resizing && selected) {
+        overlay.setRegionReady(true);
+        overlay.show(selected);
+      }
       return;
     }
     try {
