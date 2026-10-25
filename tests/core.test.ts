@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { intersect, cropPixels, rectFromPoints, validRect } from "../src/shared/geometry";
+import { intersect, cropPixels, rectFromPoints, resizeRectFromCorner, validRect } from "../src/shared/geometry";
 import { isCapture } from "../src/shared/protocol";
 import { transition } from "../src/shared/session";
 import { isSupportedPageUrl } from "../src/shared/page-url";
@@ -14,6 +14,21 @@ describe("geometry", () => {
       width: 100.25,
       height: 79.75,
     });
+  });
+  it.each([
+    ["nw", { x: 30, y: 25 }, { x: 30, y: 25, width: 90, height: 75 }],
+    ["ne", { x: 130, y: 25 }, { x: 20, y: 25, width: 110, height: 75 }],
+    ["sw", { x: 30, y: 105 }, { x: 30, y: 20, width: 90, height: 85 }],
+    ["se", { x: 130, y: 105 }, { x: 20, y: 20, width: 110, height: 85 }],
+  ] as const)("resizes from %s while preserving the opposite corner", (corner, point, expected) => {
+    expect(resizeRectFromCorner({ x: 20, y: 20, width: 100, height: 80 }, corner, point, { x: 0, y: 0, width: 200, height: 200 })).toEqual(expected);
+  });
+  it("clamps resize handles to the viewport and prevents crossing the anchor", () => {
+    const rect = { x: 20, y: 20, width: 100, height: 80 };
+    const bounds = { x: 0, y: 0, width: 200, height: 200 };
+    expect(resizeRectFromCorner(rect, "nw", { x: 190, y: 190 }, bounds)).toEqual({ x: 118, y: 98, width: 2, height: 2 });
+    expect(resizeRectFromCorner(rect, "se", { x: -20, y: -20 }, bounds)).toEqual({ x: 20, y: 20, width: 2, height: 2 });
+    expect(resizeRectFromCorner(rect, "se", { x: 300, y: 300 }, bounds)).toEqual({ x: 20, y: 20, width: 180, height: 180 });
   });
   it("retains fractional visual viewport precision at 125% zoom", () => {
     expect(

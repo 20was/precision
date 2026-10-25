@@ -238,6 +238,26 @@ async function clickShadowButton(label: string, targetPage: Page = page) {
     throw new Error(`Shadow DOM button ${label} did not become available. Selector: ${host}. Error: ${error}. Editor: ${editor}.`);
   } finally { await cdp.detach(); }
 }
+async function dragShadowControl(label: string, dx: number, dy: number, targetPage: Page = page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      if (node.attributes?.includes(label)) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const found = find(child); if (found) return found; }
+    };
+    const handle = find(root);
+    expect(handle, `Missing resize handle ${label}`).toBeTruthy();
+    const { model } = await cdp.send("DOM.getBoxModel", { backendNodeId: handle!.backendNodeId });
+    const x = (model.border[0] + model.border[4]) / 2;
+    const y = (model.border[1] + model.border[5]) / 2;
+    await targetPage.mouse.move(x, y);
+    await targetPage.mouse.down();
+    await targetPage.mouse.move(x + dx, y + dy, { steps: 4 });
+    await targetPage.mouse.up();
+  } finally { await cdp.detach(); }
+}
 async function shadowCanvasMetrics(label: string, targetPage: Page) {
   const cdp = await context.newCDPSession(targetPage);
   const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
@@ -542,7 +562,7 @@ test("real action capture pixels, clipboard, PNG export, zoom and cleanup", asyn
   await page.locator("#action").click();
   expect(await page.locator("#count").textContent()).toBe("1");
 });
-test("custom region offers in-page copy and preview with exact crop pixels", async ({}, info) => {
+test("custom region corner handles resize the crop before same-page copy and preview", async ({}, info) => {
   await context.grantPermissions(["clipboard-read"]);
   await page.locator("#solid").evaluate((el) => {
     (el as HTMLElement).style.cssText = "position:fixed;left:40px;top:140px;width:240px;height:160px;background:rgb(32,128,192);z-index:5";
@@ -559,9 +579,9 @@ test("custom region offers in-page copy and preview with exact crop pixels", asy
     await page.mouse.move(endX, endY, { steps: 6 });
     await page.mouse.up();
   };
-  const checkFlatPng = (png: { width: number; height: number; data: Uint8Array }) => {
-    expect(png.width).toBe(200);
-    expect(png.height).toBe(160);
+  const checkFlatPng = (png: { width: number; height: number; data: Uint8Array }, width = 200, height = 160) => {
+    expect(png.width).toBe(width);
+    expect(png.height).toBe(height);
     let wrong = 0;
     for (let i = 0; i < png.data.length; i += 4) {
       if (Math.abs(png.data[i]! - 32) > 1 || Math.abs(png.data[i + 1]! - 128) > 1 || Math.abs(png.data[i + 2]! - 192) > 1 || png.data[i + 3] !== 255) {
@@ -574,6 +594,9 @@ test("custom region offers in-page copy and preview with exact crop pixels", asy
   await activate("region");
   await expect(page.locator("precision-selector")).toHaveCount(1);
   await dragArea();
+  await expect.poll(() => shadowAttribute("Resize selection from bottom right", "hidden", page)).toBeNull();
+  await dragShadowControl("Resize selection from bottom right", 10, 10);
+  await expect.poll(async () => shadowHostText("precision-selector", page)).toContain("110 × 90 px");
   if (info.project.name === "chromium") await page.screenshot({ path: info.outputPath("region-selected-toolbar.png") });
   await expect.poll(() => shadowAttribute("Copy selected region", "disabled", page)).toBeNull();
   await expect.poll(() => shadowAttribute("Preview selected region", "disabled", page)).toBeNull();
@@ -588,17 +611,19 @@ test("custom region offers in-page copy and preview with exact crop pixels", asy
     ctx.drawImage(image, 0, 0);
     return { width: image.width, height: image.height, data: Array.from(ctx.getImageData(0, 0, image.width, image.height).data) };
   });
-  checkFlatPng({ width: copied.width, height: copied.height, data: Uint8Array.from(copied.data) });
+  checkFlatPng({ width: copied.width, height: copied.height, data: Uint8Array.from(copied.data) }, 220, 180);
 
   await page.waitForTimeout(650);
   await activate("region");
   await dragArea(true);
+  await dragShadowControl("Resize selection from top left", -10, -10);
+  await expect.poll(async () => shadowHostText("precision-selector", page)).toContain("110 × 90 px");
   const pagesBeforePreview = context.pages().length;
   await clickShadowButton("Preview selected region");
   await expect(page.locator("precision-preview")).toHaveCount(1);
   expect(context.pages()).toHaveLength(pagesBeforePreview);
-  const preview = await readShadowCanvas("Captured image, 200 by 160 pixels", page);
-  checkFlatPng(preview);
+  const preview = await readShadowCanvas("Captured image, 220 by 180 pixels", page);
+  checkFlatPng(preview, 220, 180);
   await clickShadowButton("Close editor");
   await activate("region");
   await page.keyboard.press("Escape");

@@ -1,4 +1,5 @@
 import type { Rect } from "./shared/geometry";
+import type { RectCorner } from "./shared/geometry";
 import { attachAnnotations } from "./annotation";
 
 function icon(path: string): SVGSVGElement {
@@ -16,6 +17,7 @@ export class Overlay {
   private readonly box = document.createElement("div");
   private readonly label = document.createElement("div");
   private readonly toolbar = document.createElement("div");
+  private readonly regionHandles = new Map<RectCorner, HTMLButtonElement>();
   private readonly copyButton = document.createElement("button");
   private readonly previewButton = document.createElement("button");
   private readonly undoAddButton = document.createElement("button");
@@ -41,6 +43,9 @@ export class Overlay {
       .box{position:fixed;border:1px solid #fff;outline:1px solid #20201e;box-shadow:inset 0 0 0 1px #20201e;display:none}
       .label{position:fixed;background:#242421;color:#f5f4ef;border:1px solid #55554e;border-radius:3px;padding:4px 7px;font:500 11px/16px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;white-space:nowrap;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis}
       .toolbar{position:fixed;left:0;top:0;display:flex;align-items:center;gap:4px;padding:4px;background:#242421;color:#f5f4ef;border:1px solid #55554e;border-radius:8px;box-shadow:0 4px 20px #0003;font:12px/20px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:default;max-width:calc(100vw - 16px)}
+      .resize-handle{position:fixed;z-index:1;width:18px;height:18px;padding:0;border:2px solid #242421;border-radius:4px;background:#f5f4ef;box-shadow:0 0 0 1px #fff;transform:translate(-50%,-50%);cursor:pointer;touch-action:none}
+      .resize-handle[data-corner="nw"],.resize-handle[data-corner="se"]{cursor:nwse-resize}.resize-handle[data-corner="ne"],.resize-handle[data-corner="sw"]{cursor:nesw-resize}
+      .resize-handle[hidden]{display:none}
       .copy{background:#f5f4ef;color:#242421;padding:7px 10px;font-weight:600;white-space:nowrap}.copy:hover{background:#deddd6}.copy:disabled{opacity:.7}
       svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;flex:none}
       button{display:flex;align-items:center;justify-content:center;gap:7px;color:#f5f4ef;background:transparent;border:0;border-radius:4px;padding:6px;font:inherit;cursor:pointer}button:hover{background:#41413b}button:focus-visible{outline:2px solid #f5f4ef;outline-offset:2px}:host(:focus-visible) .toolbar{outline:2px solid #f5f4ef;outline-offset:3px}button:disabled{opacity:.3;cursor:default}kbd{font:10px/16px -apple-system,BlinkMacSystemFont,sans-serif;border:1px solid #66665c;border-radius:3px;padding:0 4px;color:#d6d5cc}
@@ -91,13 +96,24 @@ export class Overlay {
       this.label.textContent = "Drag to select an area";
       this.label.style.cssText = "display:block;left:12px;top:58px";
       this.toolbar.style.cssText += ";left:12px;top:12px";
+      for (const [corner, label] of [["nw", "top left"], ["ne", "top right"], ["sw", "bottom left"], ["se", "bottom right"]] as const) {
+        const handle = document.createElement("button");
+        handle.type = "button";
+        handle.className = "resize-handle";
+        handle.dataset.corner = corner;
+        handle.setAttribute("aria-label", `Resize selection from ${label}`);
+        handle.title = `Resize from ${label}`;
+        handle.hidden = true;
+        this.regionHandles.set(corner, handle);
+      }
     }
-    this.root.append(style, this.box, this.label, this.toolbar);
+    this.root.append(style, this.box, this.label, this.toolbar, ...this.regionHandles.values());
     document.documentElement.append(this.host);
     this.syncToolbarBounds();
-    this.toolbar.addEventListener("keydown", (event) => {
+    this.root.addEventListener("keydown", (rawEvent) => {
+      const event = rawEvent as KeyboardEvent;
       if (event.key !== "Tab") return;
-      const controls = [...this.toolbar.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+      const controls = [...this.root.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not([hidden])")];
       if (!controls.length) return;
       const focused = this.root.activeElement as HTMLButtonElement | null;
       if (event.shiftKey && focused === controls[0]) {
@@ -125,6 +141,12 @@ export class Overlay {
       width: `${rect.width}px`,
       height: `${rect.height}px`,
     });
+    for (const [corner, handle] of this.regionHandles) {
+      const x = corner.endsWith("w") ? rect.x : rect.x + rect.width;
+      const y = corner.startsWith("n") ? rect.y : rect.y + rect.height;
+      handle.style.left = `${x}px`;
+      handle.style.top = `${y}px`;
+    }
     this.label.textContent = this.region
       ? `${Math.round(rect.width)} × ${Math.round(rect.height)} px · visible area`
       : `${name} / visible area`;
@@ -243,10 +265,11 @@ export class Overlay {
     this.previewButton.setAttribute("aria-label", `Compose ${count} captured element${count === 1 ? "" : "s"}`);
     this.undoAddButton.disabled = count === 0;
   }
-  setRegionReady(ready: boolean) {
+  setRegionReady(ready: boolean, keepHandles = false) {
     if (!this.region) return;
     this.copyButton.disabled = !ready;
     this.previewButton.disabled = !ready;
+    if (!keepHandles) for (const handle of this.regionHandles.values()) handle.hidden = !ready;
   }
   setMessage(message: string) {
     this.label.textContent = message;
@@ -255,6 +278,17 @@ export class Overlay {
   isToolbarPoint(x: number, y: number) {
     const r = this.toolbarBounds;
     return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+  regionHandleAt(x: number, y: number): RectCorner | null {
+    for (const [corner, handle] of this.regionHandles) {
+      if (handle.hidden) continue;
+      const rect = handle.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return corner;
+    }
+    return null;
+  }
+  focusRegionHandle(corner: RectCorner) {
+    this.regionHandles.get(corner)?.focus({ preventScroll: true });
   }
   isToolbarReachPoint(x: number, y: number) {
     const r = this.toolbarBounds;
