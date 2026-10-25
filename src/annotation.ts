@@ -43,6 +43,14 @@ export function attachAnnotations(
   toolbar.className = "annotation-tools";
   toolbar.setAttribute("role", "toolbar");
   toolbar.setAttribute("aria-label", "Screenshot annotation tools");
+  const objectList = document.createElement("details"),
+    objectListSummary = document.createElement("summary"),
+    objectListItems = document.createElement("ul");
+  objectList.className = "annotation-list";
+  objectListSummary.textContent = "Annotations";
+  objectList.setAttribute("aria-label", "Annotation objects");
+  objectListItems.setAttribute("role", "list");
+  objectList.append(objectListSummary, objectListItems);
 
   const marks: Mark[] = [];
   const history: Mark[][] = [[]];
@@ -196,6 +204,8 @@ export function attachAnnotations(
   toolbar.append(undo, redo, clear);
   if (toolbarParent) toolbarParent.append(toolbar);
   else canvas.insertAdjacentElement("beforebegin", toolbar);
+  if (toolbarParent) toolbarParent.append(objectList);
+  else canvas.insertAdjacentElement("beforebegin", objectList);
   canvas.style.touchAction = "none";
   canvas.style.cursor = "default";
 
@@ -309,6 +319,38 @@ export function attachAnnotations(
     }
     return undefined;
   };
+  let restoreObjectListFocus = false;
+  const renderObjectList = () => {
+    objectList.hidden = marks.length === 0;
+    objectListSummary.textContent = `Annotations · ${marks.length}`;
+    objectListItems.replaceChildren();
+    let selectedButton: HTMLButtonElement | undefined;
+    marks.forEach((mark, index) => {
+      const item = document.createElement("li"),
+        button = document.createElement("button"),
+        point = mark.points[0]!,
+        description = mark.tool === "text" ? `Text: ${mark.text ?? "empty"}` : `${mark.tool[0]!.toUpperCase()}${mark.tool.slice(1)}`;
+      button.type = "button";
+      button.textContent = `${index + 1}. ${description}`;
+      button.setAttribute("aria-label", `${description}, at ${Math.round(point.x)}, ${Math.round(point.y)}`);
+      button.setAttribute("aria-pressed", String(mark === selectedMark));
+      button.addEventListener("click", () => {
+        selectedMark = mark;
+        restoreObjectListFocus = true;
+        selectTool("select");
+        render();
+        if (mark.tool === "text") startText(mark.points[0]!, undefined, mark);
+        else status.textContent = `${description} selected. Press Delete to remove it; use the canvas to move it.`;
+      });
+      item.append(button);
+      objectListItems.append(item);
+      if (mark === selectedMark) selectedButton = button;
+    });
+    if (restoreObjectListFocus) {
+      restoreObjectListFocus = false;
+      selectedButton?.focus({ preventScroll: true });
+    }
+  };
   const render = () => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -340,6 +382,7 @@ export function attachAnnotations(
       }
     }
     options.drawForeground?.(ctx);
+    renderObjectList();
     undo.disabled = options.canUndo ? !options.canUndo() : historyIndex === 0;
     redo.disabled = options.canRedo ? !options.canRedo() : historyIndex >= history.length - 1;
     clear.disabled = marks.length === 0;
@@ -348,7 +391,7 @@ export function attachAnnotations(
     const rect = canvas.getBoundingClientRect();
     return clientToCanvasPoint(event.clientX, event.clientY, rect, canvas.width, canvas.height) ?? { x: 0, y: 0 };
   };
-  const startText = (point: Point, event: PointerEvent, existing?: Mark) => {
+  const startText = (point: Point, event?: Event, existing?: Mark) => {
     textEditor?.blur();
     const editor = document.createElement("input");
     textEditor = editor;
@@ -427,7 +470,7 @@ export function attachAnnotations(
     });
     editor.addEventListener("blur", commit, { once: true });
     editor.focus();
-    event.preventDefault();
+    event?.preventDefault();
   };
   canvas.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
@@ -615,6 +658,7 @@ export function attachAnnotations(
     bitmap?.close();
     bitmap = undefined;
     toolbar.remove();
+    objectList.remove();
   }) as AnnotationAttachment;
   dispose.render = render;
   dispose.renderForExport = renderForExport;
