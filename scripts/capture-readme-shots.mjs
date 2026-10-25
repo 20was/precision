@@ -5,6 +5,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const fixture = await readFile(resolve("tests/fixtures/showcase.html"));
+const storeMode = process.argv.includes("--store");
+const viewport = storeMode
+  ? { width: 1280, height: 800 }
+  : { width: 1440, height: 960 };
 const server = createServer((request, response) => {
   if (request.url !== "/showcase.html") {
     response.writeHead(404).end();
@@ -24,9 +28,12 @@ const context = await chromium.launchPersistentContext("", {
   channel: "chromium",
   headless: true,
   ignoreDefaultArgs: ["--disable-extensions"],
-  viewport: { width: 1440, height: 960 },
+  viewport,
   deviceScaleFactor: 1,
-  args: ["--enable-unsafe-extension-debugging", "--window-size=1440,960"],
+  args: [
+    "--enable-unsafe-extension-debugging",
+    `--window-size=${viewport.width},${viewport.height}`,
+  ],
 });
 try {
   const cdp = await context.browser().newBrowserCDPSession();
@@ -81,10 +88,14 @@ try {
         requestAnimationFrame(() => requestAnimationFrame(resolve)),
       ),
   );
-  const output = resolve("docs/images");
+  const output = resolve(storeMode ? "store-assets" : "docs/images");
   await mkdir(output, { recursive: true });
-  const saveWebp = async (path) => {
+  const saveScreenshot = async (path) => {
     const screenshot = await page.screenshot({ type: "png" });
+    if (storeMode) {
+      await writeFile(path, screenshot);
+      return;
+    }
     const webp = await page.evaluate(async (base64) => {
       const image = new Image();
       image.src = `data:image/png;base64,${base64}`;
@@ -99,11 +110,15 @@ try {
       throw new Error("This browser could not encode a WebP screenshot");
     await writeFile(path, Buffer.from(webp, "base64"));
   };
-  await saveWebp(`${output}/selection.webp`);
+  await saveScreenshot(
+    `${output}/${storeMode ? "selection.png" : "selection.webp"}`,
+  );
 
   await page.keyboard.press("Enter");
   await page.locator("precision-preview").waitFor();
-  await saveWebp(`${output}/preview.webp`);
+  await saveScreenshot(
+    `${output}/${storeMode ? "preview.png" : "preview.webp"}`,
+  );
   console.log(`Saved real extension screenshots to ${output}`);
 } finally {
   await context.close();
