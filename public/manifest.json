@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Precision \u2014 Smart Element Capture",
-  "description": "Capture the visible viewport, webpage elements or a full page; compose, annotate, copy and download locally.",
+  "description": "Capture a custom area, page element, viewport or full page; compose, annotate, copy and download locally.",
   "version": "0.1.6",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "clipboardWrite"],

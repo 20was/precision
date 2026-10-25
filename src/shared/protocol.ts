@@ -6,7 +6,7 @@ export interface CaptureMessage {
   viewport: Viewport;
   delivery: "preview" | "copy" | "composeItem";
 }
-export type StartMode = "element" | "visible" | "fullPage" | "compose";
+export type StartMode = "element" | "region" | "visible" | "fullPage" | "compose";
 export type Result<T = undefined> =
   { ok: true; value: T } | { ok: false; error: string };
 export const failure = (error: unknown): Result<never> => ({

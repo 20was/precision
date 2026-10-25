@@ -25,6 +25,11 @@
 - Captures one PNG of the active tab's visible browser viewport and opens the shared screenshot editor. It does not include browser chrome or content outside the viewport. It uses `activeTab` and the same 40-megapixel / 110 MB encoded handoff limits as other image captures.
 - Verified in automated Chromium, Chrome and Brave on the local fixture. In the headless Brave run the returned bitmap was 9 CSS pixels shorter than `innerHeight`; the editor uses the actual bitmap dimensions returned by the browser. Native window sizing may vary by browser and environment.
 
+## Custom region capture
+
+- Area selection is limited to a rectangle within the current visible viewport. Scrolling, resizing the viewport, pinch zoom, navigation, or tab deactivation cancels the selection; scrolling capture remains the separate full-page workflow.
+- The webpage is temporarily shielded from pointer actions while selecting so drag gestures do not activate links or controls. The selector is removed on Escape, successful copy/preview, navigation, or recoverable failure.
+
 ## Multi-element composition
 
 - Composition captures each element's visible rectangular pixels, then starts with a vertical stack on a white artboard. Objects remain separate until exported: move, preserve-aspect resize, reorder, remove, undo/redo and zoom are supported. The shared pen, arrow, rectangle, text and spotlight tools annotate the composition; copy/download flattens the artboard and annotations into a PNG. Annotations and layout are not saved as a project after the editor closes. Transparent backgrounds, freeform crop and saving for later editing are not included.

@@ -25,7 +25,7 @@ const paths: Record<string, string> = {
   chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   brave: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 };
-async function activate(mode: "element" | "visible" | "fullPage" | "compose" = "element", waitForResult = true) {
+async function activate(mode: "element" | "region" | "visible" | "fullPage" | "compose" = "element", waitForResult = true) {
   await page.bringToFront();
   const targets = await browserCDP.send("Target.getTargets", {
     filter: [{ type: "tab" }],
@@ -542,6 +542,71 @@ test("real action capture pixels, clipboard, PNG export, zoom and cleanup", asyn
   await page.locator("#action").click();
   expect(await page.locator("#count").textContent()).toBe("1");
 });
+test("custom region offers in-page copy and preview with exact crop pixels", async ({}, info) => {
+  await context.grantPermissions(["clipboard-read"]);
+  await page.locator("#solid").evaluate((el) => {
+    (el as HTMLElement).style.cssText = "position:fixed;left:40px;top:140px;width:240px;height:160px;background:rgb(32,128,192);z-index:5";
+  });
+  const dragArea = async (reverse = false) => {
+    const box = await page.locator("#solid").boundingBox();
+    expect(box).not.toBeNull();
+    const startX = reverse ? box!.x + 110 : box!.x + 10;
+    const startY = reverse ? box!.y + 90 : box!.y + 10;
+    const endX = reverse ? box!.x + 10 : box!.x + 110;
+    const endY = reverse ? box!.y + 10 : box!.y + 90;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(endX, endY, { steps: 6 });
+    await page.mouse.up();
+  };
+  const checkFlatPng = (png: { width: number; height: number; data: Uint8Array }) => {
+    expect(png.width).toBe(200);
+    expect(png.height).toBe(160);
+    let wrong = 0;
+    for (let i = 0; i < png.data.length; i += 4) {
+      if (Math.abs(png.data[i]! - 32) > 1 || Math.abs(png.data[i + 1]! - 128) > 1 || Math.abs(png.data[i + 2]! - 192) > 1 || png.data[i + 3] !== 255) {
+        wrong++;
+      }
+    }
+    expect(wrong).toBe(0);
+  };
+
+  await activate("region");
+  await expect(page.locator("precision-selector")).toHaveCount(1);
+  await dragArea();
+  if (info.project.name === "chromium") await page.screenshot({ path: info.outputPath("region-selected-toolbar.png") });
+  await expect.poll(() => shadowAttribute("Copy selected region", "disabled", page)).toBeNull();
+  await expect.poll(() => shadowAttribute("Preview selected region", "disabled", page)).toBeNull();
+  const pagesBeforeCopy = context.pages().length;
+  await clickShadowButton("Copy selected region");
+  await expect(page.locator("precision-notice")).toHaveCount(1);
+  expect(context.pages()).toHaveLength(pagesBeforeCopy);
+  const copied = await page.evaluate(async () => {
+    const items = await navigator.clipboard.read();
+    const image = await createImageBitmap(await items[0]!.getType("image/png"));
+    const canvas = new OffscreenCanvas(image.width, image.height), ctx = canvas.getContext("2d")!;
+    ctx.drawImage(image, 0, 0);
+    return { width: image.width, height: image.height, data: Array.from(ctx.getImageData(0, 0, image.width, image.height).data) };
+  });
+  checkFlatPng({ width: copied.width, height: copied.height, data: Uint8Array.from(copied.data) });
+
+  await page.waitForTimeout(650);
+  await activate("region");
+  await dragArea(true);
+  const pagesBeforePreview = context.pages().length;
+  await clickShadowButton("Preview selected region");
+  await expect(page.locator("precision-preview")).toHaveCount(1);
+  expect(context.pages()).toHaveLength(pagesBeforePreview);
+  const preview = await readShadowCanvas("Captured image, 200 by 160 pixels", page);
+  checkFlatPng(preview);
+  await clickShadowButton("Close editor");
+  await activate("region");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("precision-selector")).toHaveCount(0);
+  await page.locator("#action").click();
+  await expect(page.locator("#count")).toHaveText("1");
+});
+
 test("selection and preview stay keyboard reachable and expose dialog semantics", async () => {
   await activate();
   await expect(page.locator("precision-selector")).toHaveCount(1);

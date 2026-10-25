@@ -21,6 +21,7 @@ export class Overlay {
   private readonly undoAddButton = document.createElement("button");
   private readonly copyLabel = document.createElement("span");
   private readonly composition: boolean;
+  private readonly region: boolean;
   private toolbarBounds = { left: 0, right: 0, top: 0, bottom: 0 };
   private selectionRect: Rect | null = null;
   constructor(actions: {
@@ -28,8 +29,9 @@ export class Overlay {
     preview: () => void;
     copy: () => void;
     undoAdd?: () => void;
-  }, mode: "element" | "compose" = "element") {
+  }, mode: "element" | "compose" | "region" = "element") {
     this.composition = mode === "compose";
+    this.region = mode === "region";
     this.host.tabIndex = -1;
     this.host.style.cssText =
       "all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:auto!important;display:block!important;outline:none!important;cursor:crosshair!important;";
@@ -50,11 +52,11 @@ export class Overlay {
     this.label.setAttribute("role", "status");
     this.label.setAttribute("aria-live", "polite");
     this.toolbar.setAttribute("role", "toolbar");
-    this.toolbar.setAttribute("aria-label", this.composition ? "Compose selected page elements" : "Element selection");
+    this.toolbar.setAttribute("aria-label", this.composition ? "Compose selected page elements" : this.region ? "Selected page region" : "Element selection");
     this.copyButton.type = "button";
     this.copyButton.className = "copy";
-    this.copyButton.setAttribute("aria-label", this.composition ? "Add selected element to composition" : "Copy selected element");
-    this.copyButton.title = this.composition ? "Add this visible element and keep selecting" : "Capture and copy without opening the preview";
+    this.copyButton.setAttribute("aria-label", this.composition ? "Add selected element to composition" : this.region ? "Copy selected region" : "Copy selected element");
+    this.copyButton.title = this.composition ? "Add this visible element and keep selecting" : this.region ? "Capture and copy this area" : "Capture and copy without opening the preview";
     this.copyLabel.textContent = this.composition ? "Add element" : "Copy";
     this.copyButton.append(
       icon(
@@ -66,7 +68,7 @@ export class Overlay {
     this.previewButton.type = "button";
     this.previewButton.textContent = this.composition ? "Compose · 0" : "Preview";
     this.previewButton.disabled = this.composition;
-    this.previewButton.setAttribute("aria-label", this.composition ? "Compose captured elements" : "Preview selected element");
+    this.previewButton.setAttribute("aria-label", this.composition ? "Compose captured elements" : this.region ? "Preview selected region" : "Preview selected element");
     this.previewButton.title = this.composition ? "Capture at least one element to compose" : "Open image preview (Enter)";
     this.previewButton.addEventListener("click", actions.preview);
     this.undoAddButton.type = "button";
@@ -83,8 +85,16 @@ export class Overlay {
     cancel.addEventListener("click", actions.cancel);
     if (this.composition) this.toolbar.append(this.copyButton, this.undoAddButton, this.previewButton, cancel);
     else this.toolbar.append(this.copyButton, this.previewButton, cancel);
+    if (this.region) {
+      this.copyButton.disabled = true;
+      this.previewButton.disabled = true;
+      this.label.textContent = "Drag to select an area";
+      this.label.style.cssText = "display:block;left:12px;top:58px";
+      this.toolbar.style.cssText += ";left:12px;top:12px";
+    }
     this.root.append(style, this.box, this.label, this.toolbar);
     document.documentElement.append(this.host);
+    this.syncToolbarBounds();
     this.toolbar.addEventListener("keydown", (event) => {
       if (event.key !== "Tab") return;
       const controls = [...this.toolbar.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
@@ -115,7 +125,9 @@ export class Overlay {
       width: `${rect.width}px`,
       height: `${rect.height}px`,
     });
-    this.label.textContent = `${name} / visible area`;
+    this.label.textContent = this.region
+      ? `${Math.round(rect.width)} × ${Math.round(rect.height)} px · visible area`
+      : `${name} / visible area`;
     this.label.style.left = `${Math.max(8, Math.min(rect.x, innerWidth - 200))}px`;
     this.label.style.top = `${rect.y >= 34 ? rect.y - 29 : Math.min(innerHeight - 34, rect.y + rect.height + 5)}px`;
     if (x !== undefined && y !== undefined) {
@@ -137,6 +149,7 @@ export class Overlay {
       );
       const clamp = (v: number, max: number, size: number) =>
         Math.max(4, Math.min(max - size - 4, v));
+      const gap = this.region ? 8 : 0;
       const intersects = (
         a: { left: number; top: number; right: number; bottom: number },
         b: Rect,
@@ -147,11 +160,11 @@ export class Overlay {
         a.bottom > b.y;
       const candidates = [
         {
-          left: rect.x + rect.width,
+          left: rect.x + rect.width + gap,
           top: clamp(y - toolbar.height / 2, innerHeight, toolbar.height),
         },
         {
-          left: rect.x - toolbar.width,
+          left: rect.x - toolbar.width - gap,
           top: clamp(y - toolbar.height / 2, innerHeight, toolbar.height),
         },
         {
@@ -160,7 +173,7 @@ export class Overlay {
             innerWidth,
             toolbar.width,
           ),
-          top: rect.y + rect.height,
+          top: rect.y + rect.height + gap,
         },
         {
           left: clamp(
@@ -168,7 +181,7 @@ export class Overlay {
             innerWidth,
             toolbar.width,
           ),
-          top: rect.y - toolbar.height,
+          top: rect.y - toolbar.height - gap,
         },
       ].filter(
         (p) =>
@@ -206,14 +219,17 @@ export class Overlay {
       const top = adjacent?.top ?? centeredTop;
       this.toolbar.style.left = `${left}px`;
       this.toolbar.style.top = `${top}px`;
-      const placed = this.toolbar.getBoundingClientRect();
-      this.toolbarBounds = {
-        left: placed.left,
-        right: placed.right,
-        top: placed.top,
-        bottom: placed.bottom,
-      };
+      this.syncToolbarBounds();
     }
+  }
+  private syncToolbarBounds() {
+    const placed = this.toolbar.getBoundingClientRect();
+    this.toolbarBounds = {
+      left: placed.left,
+      right: placed.right,
+      top: placed.top,
+      bottom: placed.bottom,
+    };
   }
   setCopyBusy(busy: boolean) {
     this.copyButton.disabled = busy;
@@ -226,6 +242,11 @@ export class Overlay {
     this.previewButton.title = count ? "Open the editable composition canvas" : "Capture at least one element to compose";
     this.previewButton.setAttribute("aria-label", `Compose ${count} captured element${count === 1 ? "" : "s"}`);
     this.undoAddButton.disabled = count === 0;
+  }
+  setRegionReady(ready: boolean) {
+    if (!this.region) return;
+    this.copyButton.disabled = !ready;
+    this.previewButton.disabled = !ready;
   }
   setMessage(message: string) {
     this.label.textContent = message;
