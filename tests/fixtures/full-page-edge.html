@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Precision full-page edge fixtures</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body { font: 16px system-ui, sans-serif; }
+      header { position: sticky; top: 0; z-index: 4; height: 64px; padding: 20px; background: #172033; color: white; }
+      main { width: 100%; }
+      .band { height: 640px; padding: 40px; color: white; font-size: 28px; font-weight: 700; }
+      #band-a { background: #2468a0; }
+      #band-b { background: #a33e46; }
+      #band-c { background: #34825b; }
+      #band-d { background: #a57922; }
+      .lazy-image { display: block; width: 120px; height: 100px; margin-top: 24px; background: #777; }
+      .nested { width: 360px; height: 180px; overflow: auto; border: 2px solid white; }
+      .nested-inner { width: 100%; height: 600px; }
+      .nested-inner div { height: 150px; }
+      .nested-inner div:nth-child(1) { background: #e5484d; }
+      .nested-inner div:nth-child(2) { background: #38a169; }
+      .nested-inner div:nth-child(3) { background: #3478d4; }
+      .nested-inner div:nth-child(4) { background: #9b59b6; }
+      .fixed-bottom { position: fixed; z-index: 10; inset: auto 0 0; height: 20px; background: #00c9b7; }
+      #animated { width: 120px; height: 80px; background: #d23e85; animation: color-cycle 900ms linear infinite alternate; }
+      @keyframes color-cycle { to { background: #345cce; } }
+    </style>
+  </head>
+  <body>
+    <header>Sticky edge fixture</header>
+    <main>
+      <section id="band-a" class="band">BAND A</section>
+      <section id="band-b" class="band">BAND B</section>
+      <section id="band-c" class="band">BAND C<div id="animated" aria-label="animated sample"></div><div class="nested" aria-label="nested scroll fixture"><div class="nested-inner"><div></div><div></div><div></div><div></div></div></div></section>
+      <section id="band-d" class="band">BAND D<img class="lazy-image" width="120" height="100" alt="lazy loaded fixture" data-color="#ff00ff" /></section>
+    </main>
+    <div class="fixed-bottom" aria-hidden="true"></div>
+    <script>
+      const query = new URLSearchParams(location.search);
+      const lazyImage = document.querySelector(".lazy-image");
+      const svgFor = (color) => `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="100"><rect width="120" height="100" fill="${encodeURIComponent(color)}"/></svg>`;
+      const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) if (entry.isIntersecting) {
+          lazyImage.src = svgFor(lazyImage.dataset.color);
+          observer.disconnect();
+        }
+      });
+      observer.observe(lazyImage);
+      window.__precisionDynamicHeightChanged = false;
+      window.addEventListener("scroll", () => {
+        if (query.get("case") === "dynamic" && !window.__precisionDynamicHeightChanged && scrollY > 500) {
+          window.__precisionDynamicHeightChanged = true;
+          const added = document.createElement("section");
+          added.className = "band";
+          added.id = "dynamic-band";
+          added.style.background = "#5b4aaa";
+          added.textContent = "DYNAMIC BAND";
+          document.querySelector("main").append(added);
+        }
+      }, { passive: true });
+      if (query.get("short") === "1") {
+        document.querySelectorAll("main section:not(#band-a)").forEach((section) => section.remove());
+        document.querySelector(".fixed-bottom").remove();
+      }
+    </script>
+  </body>
+</html>

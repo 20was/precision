@@ -16,6 +16,7 @@ let context: BrowserContext,
   page: Page,
   browserCDP: CDPSession,
   id: string;
+const selectAllShortcut = process.platform === "darwin" ? "Meta+a" : "Control+a";
 const paths: Record<string, string> = {
   chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   brave: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
@@ -46,17 +47,50 @@ async function activate(mode: "element" | "visible" | "fullPage" | "compose" = "
     targetId: popupId,
     flatten: false,
   });
-  await browserCDP.send("Target.sendMessageToTarget", {
-    sessionId,
-    message: JSON.stringify({
-      id: 1,
-      method: "Runtime.evaluate",
-      params: {
-        expression: `document.readyState==='loading' ? document.addEventListener('DOMContentLoaded',()=>document.querySelector('[data-mode="${mode}"]').click(),{once:true}) : document.querySelector('[data-mode="${mode}"]').click()`,
-        userGesture: true,
-      },
-    }),
-  });
+  let commandId = 0;
+  const sendPopupCommand = (method: string, params: Record<string, unknown>) => {
+    const id = ++commandId;
+    return new Promise<{ result?: { value?: unknown; objectId?: string } }>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        browserCDP.off("Target.receivedMessageFromTarget", onResponse);
+        reject(new Error("The extension popup did not acknowledge its capture action."));
+      }, 5_000);
+      const onResponse = (event: { sessionId: string; message: string }) => {
+        if (event.sessionId !== sessionId) return;
+        let response: { id?: number; result?: { result?: { value?: unknown; objectId?: string }; exceptionDetails?: { text?: string } }; error?: { message?: string } };
+        try { response = JSON.parse(event.message); } catch { return; }
+        if (response.id !== id) return;
+        clearTimeout(timeout);
+        browserCDP.off("Target.receivedMessageFromTarget", onResponse);
+        if (response.error || response.result?.exceptionDetails)
+          reject(new Error(response.error?.message ?? response.result?.exceptionDetails?.text ?? "The popup action failed."));
+        else resolve(response.result);
+      };
+      browserCDP.on("Target.receivedMessageFromTarget", onResponse);
+      void browserCDP.send("Target.sendMessageToTarget", {
+        sessionId,
+        message: JSON.stringify({ id, method, params }),
+      }).catch((error) => {
+        clearTimeout(timeout);
+        browserCDP.off("Target.receivedMessageFromTarget", onResponse);
+        reject(error);
+      });
+    });
+  };
+  try {
+    const documentResponse = await sendPopupCommand("Runtime.evaluate", { expression: "document" });
+    const objectId = documentResponse.result?.objectId;
+    if (!objectId) throw new Error("The extension popup document is unavailable.");
+    await sendPopupCommand("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: "async function(mode){if(this.readyState==='loading')await new Promise(resolve=>this.addEventListener('DOMContentLoaded',resolve,{once:true}));const button=Array.from(this.querySelectorAll('button[data-mode]')).find(candidate=>candidate.dataset.mode===mode);if(!button)throw new Error('Capture mode button is missing');button.click();return button.dataset.mode}",
+      arguments: [{ value: mode }],
+      awaitPromise: true,
+      userGesture: true,
+    });
+  } finally {
+    await browserCDP.send("Target.detachFromTarget", { sessionId }).catch(() => {});
+  }
   if (mode === "visible" || mode === "fullPage") {
     if (mode === "fullPage") {
       if (!waitForResult) {
@@ -122,9 +156,40 @@ async function select(selector: string) {
     box!.y + Math.min(box!.height / 2, 20),
   );
   await clickShadowButton("Preview selected element");
-  await expect(page.locator("precision-preview")).toHaveCount(1);
+  const outcome = await page.evaluate(() => new Promise<"preview" | "error" | "timeout">((resolve) => {
+    const check = () => {
+      if (document.querySelector("precision-preview")) return finish("preview");
+      if (document.querySelector("precision-error")) return finish("error");
+    };
+    const observer = new MutationObserver(check);
+    const timer = window.setTimeout(() => finish("timeout"), 5_000);
+    const finish = (result: "preview" | "error" | "timeout") => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      resolve(result);
+    };
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    check();
+  }));
+  if (outcome === "error")
+    throw new Error(`Element capture failed: ${await shadowHostText("precision-error", page)}`);
+  expect(outcome, "capture should create a preview or show its actionable error").toBe("preview");
   console.log("Click to decoded preview ms", Math.round(performance.now() - started));
   return page;
+}
+async function shadowHostText(tagName: string, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { nodeName?: string; nodeValue?: string; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => node.nodeName?.toLowerCase() === tagName
+      ? node
+      : [...(node.children ?? []), ...(node.shadowRoots ?? [])].map(find).find(Boolean);
+    const host = find(root as Node);
+    if (!host) return "no error message was attached";
+    const text = (node: Node): string => `${node.nodeValue ?? ""}${(node.children ?? []).map(text).join(" ")}${(node.shadowRoots ?? []).map(text).join(" ")}`;
+    return text(host).replace(/\s+/g, " ").trim();
+  } finally { await cdp.detach(); }
 }
 async function clickShadowButton(label: string, targetPage: Page = page) {
   const cdp = await context.newCDPSession(targetPage);
@@ -149,7 +214,10 @@ async function clickShadowButton(label: string, targetPage: Page = page) {
         return;
       } catch { await targetPage.waitForTimeout(100); }
     }
-    throw new Error(`Shadow DOM button ${label} did not become available.`);
+    const host = await shadowHostText("precision-selector", targetPage).catch(() => "selector host unavailable");
+    const error = await shadowHostText("precision-error", targetPage).catch(() => "no error host");
+    const editor = await shadowHostText("precision-composition", targetPage).catch(() => "no composition editor");
+    throw new Error(`Shadow DOM button ${label} did not become available. Selector: ${host}. Error: ${error}. Editor: ${editor}.`);
   } finally { await cdp.detach(); }
 }
 async function shadowCanvasMetrics(label: string, targetPage: Page) {
@@ -225,6 +293,52 @@ async function shadowAttribute(label: string, attribute: string, targetPage: Pag
     const attrs = node!.attributes ?? [];
     const index = attrs.indexOf(attribute);
     return index < 0 ? null : attrs[index + 1] ?? null;
+  } finally { await cdp.detach(); }
+}
+async function shadowControlIsFocused(label: string, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      if (node.attributes?.includes(label)) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const result = find(child); if (result) return result; }
+    };
+    const node = find(root);
+    expect(node, `Shadow DOM control ${label}`).toBeTruthy();
+    const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: node!.backendNodeId });
+    const result = await cdp.send("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function(){return this.matches(':focus')}", returnByValue: true });
+    return result.result.value as boolean;
+  } finally { await cdp.detach(); }
+}
+async function shadowHostIsFocused(tagName: string, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; nodeName?: string; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => node.nodeName?.toLowerCase() === tagName
+      ? node
+      : [...(node.children ?? []), ...(node.shadowRoots ?? [])].map(find).find(Boolean);
+    const host = find(root);
+    expect(host, `Shadow DOM host ${tagName}`).toBeTruthy();
+    const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: host!.backendNodeId });
+    const result = await cdp.send("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function(){return this.matches(':focus')}", returnByValue: true });
+    return result.result.value as boolean;
+  } finally { await cdp.detach(); }
+}
+async function clickShadowText(label: string, targetPage: Page = page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; nodeName?: string; nodeValue?: string; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const text = (node: Node): string => `${node.nodeValue ?? ""}${(node.children ?? []).map(text).join("")}${(node.shadowRoots ?? []).map(text).join("")}`;
+    const find = (node: Node): Node | undefined => ["BUTTON", "SUMMARY"].includes(node.nodeName ?? "") && (text(node).trim() === label || (node.nodeName === "SUMMARY" && text(node).trim().startsWith(label)))
+      ? node
+      : [...(node.children ?? []), ...(node.shadowRoots ?? [])].map(find).find(Boolean);
+    const button = find(root as Node);
+    expect(button, `Shadow DOM button text ${label}`).toBeTruthy();
+    const { model } = await cdp.send("DOM.getBoxModel", { backendNodeId: button!.backendNodeId });
+    await targetPage.mouse.click((model.border[0]! + model.border[4]!) / 2, (model.border[1]! + model.border[5]!) / 2);
   } finally { await cdp.detach(); }
 }
 async function centerCanvasPointInViewport(label: string, x: number, y: number, targetPage: Page) {
@@ -405,6 +519,76 @@ test("real action capture pixels, clipboard, PNG export, zoom and cleanup", asyn
   await page.bringToFront();
   await page.locator("#action").click();
   expect(await page.locator("#count").textContent()).toBe("1");
+});
+test("selection and preview stay keyboard reachable and expose dialog semantics", async () => {
+  await activate();
+  await expect(page.locator("precision-selector")).toHaveCount(1);
+  expect(await shadowHostIsFocused("precision-selector", page)).toBe(true);
+  await page.keyboard.press("Tab");
+  expect(await shadowControlIsFocused("Copy selected element", page)).toBe(true);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  expect(await shadowControlIsFocused("Copy selected element", page)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("precision-selector")).toHaveCount(0);
+
+  await activate();
+  await select("#solid");
+  await expect(page.locator("precision-preview")).toHaveCount(1);
+  const ax = await context.newCDPSession(page);
+  const tree = await ax.send("Accessibility.getFullAXTree");
+  const descriptions = tree.nodes.map((node: { role?: { value?: string }; name?: { value?: string } }) => `${node.role?.value ?? ""}:${node.name?.value ?? ""}`);
+  expect(descriptions).toContain("dialog:Screenshot editor");
+  expect(descriptions).toContain("button:Copy image");
+  expect(descriptions).toContain("button:Download PNG");
+  await ax.detach();
+  await clickShadowButton("Zoom out (−)");
+  expect(await shadowControlIsFocused("Zoom out (−)", page)).toBe(true);
+  await page.keyboard.press("Shift+Tab");
+  expect(await shadowControlIsFocused("Download PNG", page)).toBe(true);
+  await page.keyboard.press("Tab");
+  expect(await shadowControlIsFocused("Zoom out (−)", page)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("precision-preview")).toHaveCount(0);
+});
+test("composition controls remain reachable in a narrow, short editor viewport", async () => {
+  const pageTarget = (await browserCDP.send("Target.getTargets")).targetInfos.find((target) => target.url === page.url());
+  const { windowId } = await browserCDP.send("Browser.getWindowForTarget", { targetId: pageTarget?.targetId });
+  await browserCDP.send("Browser.setWindowBounds", { windowId, bounds: { width: 390, height: 480, windowState: "normal" } });
+  await page.goto("http://localhost:4173/index.html");
+  await activate("compose");
+  const target = await page.locator("#solid").boundingBox();
+  expect(target).not.toBeNull();
+  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2);
+  await clickShadowButton("Add selected element to composition");
+  await clickShadowButton("Compose 1 captured element");
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  await expect.poll(() => {
+    editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+    return !!editor;
+  }).toBe(true);
+  await editor!.bringToFront();
+  const cdp = await context.newCDPSession(editor!);
+  type Node = { backendNodeId: number; nodeName?: string; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+  const collect = (node: Node, name: string): Node[] => [
+    ...(node.nodeName === name ? [node] : []),
+    ...[...(node.children ?? []), ...(node.shadowRoots ?? [])].flatMap((child) => collect(child, name)),
+  ];
+  const footer = collect(root, "FOOTER").find((node) => node.children?.some((child) => child.nodeName === "DIV" && child.attributes?.includes("actions")));
+  const actionButtons = footer ? collect(footer, "BUTTON") : [];
+  const footerBox = footer ? (await cdp.send("DOM.getBoxModel", { backendNodeId: footer.backendNodeId })).model.border : [];
+  expect(actionButtons.length).toBeGreaterThanOrEqual(4);
+  for (const button of actionButtons) {
+    const quad = (await cdp.send("DOM.getBoxModel", { backendNodeId: button.backendNodeId })).model.border;
+    const left = Math.min(quad[0]!, quad[2]!, quad[4]!, quad[6]!);
+    const right = Math.max(quad[0]!, quad[2]!, quad[4]!, quad[6]!);
+    expect(right - left).toBeGreaterThan(0);
+    expect(left).toBeGreaterThanOrEqual(Math.min(footerBox[0]!, footerBox[6]!) - 1);
+    expect(right).toBeLessThanOrEqual(Math.max(footerBox[2]!, footerBox[4]!) + 1);
+  }
+  await cdp.detach();
 });
 test("keyboard, clipping, repeated cancellation, navigation and expired preview", async ({}, info) => {
   const cdp = await context.newCDPSession(page);
@@ -875,7 +1059,7 @@ test("annotation geometry, history and export pixels stay stable across zoom", a
   metrics = await shadowCanvasMetrics(label, editor!);
   const textPoint = canvasClientPoint(metrics, 310, 25);
   await editor!.mouse.click(textPoint.x, textPoint.y);
-  await editor!.keyboard.press("Control+a");
+  await editor!.keyboard.press(selectAllShortcut);
   await editor!.keyboard.type("New text");
   current = await readShadowCanvas(label, editor!);
   expect(countRed(current, { x: 298, y: 17, width: 130, height: 30 })).toBe(0);
@@ -883,11 +1067,23 @@ test("annotation geometry, history and export pixels stay stable across zoom", a
   await editor!.keyboard.press("Enter");
   current = await readShadowCanvas(label, editor!);
   expect(countGreen(current, { x: 298, y: 17, width: 150, height: 30 })).toBeGreaterThan(0);
+  await clickShadowText("Annotations ·", editor!);
+  const accessibility = await context.newCDPSession(editor!);
+  const annotationTree = await accessibility.send("Accessibility.getFullAXTree");
+  expect(annotationTree.nodes.some((node: { role?: { value?: string }; name?: { value?: string } }) => node.role?.value === "button" && node.name?.value === "Text: New text, at 300, 20")).toBe(true);
+  await accessibility.detach();
+  await clickShadowButton("Text: New text, at 300, 20", editor!);
+  await editor!.keyboard.press(selectAllShortcut);
+  await editor!.keyboard.type("Edited from annotation list");
+  await editor!.keyboard.press("Enter");
+  current = await readShadowCanvas(label, editor!);
+  expect(countGreen(current, { x: 298, y: 17, width: 190, height: 30 })).toBeGreaterThan(0);
   await editor!.keyboard.press("Control+z");
   current = await readShadowCanvas(label, editor!);
-  expect(countRed(current, { x: 298, y: 17, width: 100, height: 30 })).toBeGreaterThan(0);
-  expect(countGreen(current, { x: 298, y: 17, width: 150, height: 30 })).toBe(0);
+  expect(countRed(current, { x: 298, y: 17, width: 150, height: 30 })).toBeGreaterThan(0);
   await editor!.keyboard.press("Control+Shift+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(countGreen(current, { x: 298, y: 17, width: 190, height: 30 })).toBeGreaterThan(0);
 
   await centerCanvasPointInViewport(label, 310, 25, editor!);
   metrics = await shadowCanvasMetrics(label, editor!);
@@ -1161,6 +1357,106 @@ test("full-page capture stitches sticky-header bands and restores the page", asy
   await Promise.all([closed, close]);
 });
 
+test("full-page capture settles a lazy image and documents fixed/nested content", async ({}, info) => {
+  const startedAt = Date.now();
+  await page.goto("http://localhost:4173/full-page-edge.html");
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.tabs.setZoom(tab!.id!, 1.25);
+  });
+  await page.evaluate(() => window.scrollTo(0, 120));
+  const before = await page.evaluate(() => ({
+    x: scrollX,
+    y: scrollY,
+    width: innerWidth,
+    height: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
+    zoom: visualViewport!.scale,
+  }));
+  expect(await page.locator(".lazy-image").evaluate((image: HTMLImageElement) => image.currentSrc)).toBe("");
+  const lazyRect = await page.locator(".lazy-image").boundingBox();
+  expect(lazyRect).not.toBeNull();
+
+  await activate("fullPage");
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  await expect.poll(() => {
+    editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+    return !!editor;
+  }).toBe(true);
+  await editor!.bringToFront();
+  const downloaded = await exportComposition(editor!, info.outputPath("full-page-lazy.png"));
+  const pngBytes = (await readFile(info.outputPath("full-page-lazy.png"))).byteLength;
+  console.log("Full-page fixture measurement", { pngWidth: downloaded.width, pngHeight: downloaded.height, decodedRgbaBytes: downloaded.data.byteLength, pngBytes, elapsedMs: Date.now() - startedAt });
+  const scale = downloaded.width / before.width;
+  expect(scale).toBeGreaterThan(2.4);
+  expect(scale).toBeLessThan(2.6);
+  expect(downloaded.height).toBeGreaterThan(before.height * scale - 8);
+  const pixel = (x: number, y: number) => {
+    const offset = (Math.floor(y) * downloaded.width + Math.floor(x)) * 4;
+    return [...downloaded.data.subarray(offset, offset + 4)];
+  };
+  const sample = (x: number, y: number) => pixel(x * scale, y * scale).slice(0, 3);
+  expect(sample(300, 400)).toEqual([36, 104, 160]);
+  expect(sample(300, 900)).toEqual([163, 62, 70]);
+  expect(sample(800, 1600)).toEqual([52, 130, 91]);
+  expect(sample(800, 2200)).toEqual([165, 121, 34]);
+  expect(sample(lazyRect!.x + lazyRect!.width / 2, lazyRect!.y + before.y + lazyRect!.height / 2)).toEqual([255, 0, 255]);
+  // The captured view includes only the visible portion of the nested scroller.
+  let unseenNestedPurplePixels = 0;
+  for (let y = 0; y < downloaded.height; y++) for (let x = 0; x < downloaded.width; x++) {
+    const offset = (y * downloaded.width + x) * 4;
+    if (downloaded.data[offset] === 155 && downloaded.data[offset + 1] === 89 && downloaded.data[offset + 2] === 182)
+      unseenNestedPurplePixels++;
+  }
+  expect(unseenNestedPurplePixels).toBe(0);
+  let fixedBarRuns = 0, insideFixedBar = false;
+  for (let y = 0; y < downloaded.height; y++) {
+    const offset = (y * downloaded.width + Math.floor(10 * scale)) * 4;
+    const isFixedBar = downloaded.data[offset] === 0 && downloaded.data[offset + 1] === 201 && downloaded.data[offset + 2] === 183;
+    if (isFixedBar && !insideFixedBar) fixedBarRuns++;
+    insideFixedBar = isFixedBar;
+  }
+  expect(fixedBarRuns).toBeGreaterThan(1);
+  expect(await page.evaluate(() => ({ x: scrollX, y: scrollY }))).toEqual({ x: before.x, y: before.y });
+  const closed = editor!.waitForEvent("close");
+  const close = clickShadowButton("Close editor", editor!).catch(() => undefined);
+  await Promise.all([closed, close]);
+});
+
+test("full-page rejects changing height and recovers on a stable retry", async ({}, info) => {
+  await page.goto("http://localhost:4173/full-page-edge.html?case=dynamic");
+  await page.evaluate(() => window.scrollTo(0, 120));
+  const originalY = await page.evaluate(() => scrollY);
+  await expect(activate("fullPage")).rejects.toThrow(/page layout changed/i);
+  await expect(page.locator("precision-error")).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(originalY);
+  expect(await page.evaluate(() => (window as Window & { __precisionDynamicHeightChanged?: boolean }).__precisionDynamicHeightChanged)).toBe(true);
+
+  await clickShadowText("Dismiss");
+  await page.evaluate(() => document.querySelector("#dynamic-band")?.remove());
+  await activate("fullPage");
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  await expect.poll(() => {
+    editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+    return !!editor;
+  }).toBe(true);
+  await editor!.bringToFront();
+  const image = await exportComposition(editor!, info.outputPath("full-page-stable-retry.png"));
+  expect(image.height).toBeGreaterThan(0);
+  const closed = editor!.waitForEvent("close");
+  const close = clickShadowButton("Close editor", editor!).catch(() => undefined);
+  await Promise.all([closed, close]);
+});
+
+test("full-page rejects oversized output before allocating a tall stitch canvas", async () => {
+  await page.goto("http://localhost:4173/full-page-edge.html?case=oversize");
+  await page.locator("main").evaluate((main) => { (main as HTMLElement).style.height = "20000px"; });
+  const originalY = await page.evaluate(() => scrollY);
+  await expect(activate("fullPage")).rejects.toThrow(/too large to capture safely/i);
+  await expect(page.locator("precision-error")).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(originalY);
+  await expect.poll(async () => (await browserCDP.send("Target.getTargets")).targetInfos.some((target) => target.url.startsWith(`chrome-extension://${id}/editor.html?id=`))).toBe(false);
+});
+
 test("full-page capture handles a document shorter than its viewport", async ({}, info) => {
   await page.goto("http://localhost:4173/full-page.html?short=1");
   const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
@@ -1196,4 +1492,27 @@ test("full-page Escape cancels and restores the original page scroll", async () 
   await expect(page.locator("precision-full-page-progress")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => ({ x: scrollX, y: scrollY }))).toEqual(original);
   await expect.poll(async () => (await browserCDP.send("Target.getTargets")).targetInfos.some((t) => t.url.startsWith(`chrome-extension://${id}/editor.html?id=`))).toBe(false);
+});
+test("full-page cancellation on tab switch restores the page and permits a fresh capture", async ({}, info) => {
+  await page.goto("http://localhost:4173/full-page-edge.html");
+  await page.evaluate(() => window.scrollTo(0, 100));
+  const originalY = await page.evaluate(() => scrollY);
+  await activate("fullPage", false);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(originalY);
+  const otherTab = await context.newPage();
+  await otherTab.goto("http://localhost:4173/index.html");
+  await expect(page.locator("precision-full-page-progress")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(originalY);
+  await otherTab.close();
+  await page.bringToFront();
+  await activate("fullPage");
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  await expect.poll(() => {
+    editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+    return !!editor;
+  }).toBe(true);
+  await editor!.bringToFront();
+  const image = await exportComposition(editor!, info.outputPath("full-page-after-tab-switch.png"));
+  expect(image.width).toBeGreaterThan(0);
+  expect(image.height).toBeGreaterThan(0);
 });

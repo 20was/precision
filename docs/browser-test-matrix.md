@@ -51,3 +51,25 @@ For manual native-window checks, use [README.md](../README.md#manual-smoke-check
 | Brave editor precision cases | Verified | Annotation pixel/history and overlapping composition UI tests passed on Brave 155.0.8059.40. |
 
 Final command: `npm run test:integration` — 30 passed across three real-extension browser projects (10 per project, 2.4 minutes). Browser runs were headless on macOS with forced DPR 2. They do not establish native-window, screen-reader, or other operating-system behavior.
+
+## Milestone 03 additions (2026-10-25)
+
+| Case | Status | Evidence / boundary |
+| --- | --- | --- |
+| Previously flaky Chrome integration cases | Repeated pass after harness fix | The popup action helper now waits for the `Runtime.evaluate` response and reports missing/failed actions. The two affected tests passed 3 repetitions each in Chrome 155.0.8059.85; this is a finite sample, not a guarantee of zero flake. Failure screenshots, traces and video are retained. |
+| Lazy image loaded by IntersectionObserver | Verified, fixture scope | Full-page extension capture waits for visible pending image decode, then samples the expected magenta output pixel. |
+| Dynamic page height | Verified failure/recovery | A fixture appends content on scroll; capture reports the layout change, restores initial scroll, and a stable retry succeeds. |
+| Animated content | Partially supported | Captures each strip as rendered; no pause/freeze is applied. The fixture verifies capture completes, not that an animation has one consistent frame across all strips. |
+| Sticky header and fixed bottom bar | Verified limitation | Sticky top header is not repeated in tested stitch; fixed bottom bar repeats as composited viewport pixels. |
+| Nested scrolling region | Unsupported for stitching | Main document is captured; offscreen nested content is absent from the resulting PNG. |
+| 125% browser zoom / DPR 2 | Verified, fixture scope | Decoded PNG dimension and flat-color pixel checks pass; effective screenshot scale measured from bitmap dimensions. |
+| Oversized full-page output | Verified rejection | Tall fixture is rejected before canvas allocation; original scroll is restored and no editor tab is opened. |
+| Full-page cancellation and recovery | Verified in existing Escape test and failure/retry case | Escape exits progress, restores the source scroll and prevents stale editor creation. Dynamic failure can be dismissed and followed by a successful capture. |
+| Small/short composition editor window | Verified, all three engines | Real browser window resized to 390 × 480 CSS px; footer buttons remain inside the footer bounds. This does not cover all light/dark combinations or every desktop OS. |
+| Keyboard selection and preview | Verified, all three engines | Selection host receives initial focus; Tab cycles selector controls; Escape cancels; preview exposes a dialog and named copy/download controls with focus wrapping. |
+| Annotation list semantics | Verified, all three engines | The editable annotation object is exposed as a named button in the accessibility tree after the list is expanded; keyboard editing is exercised. |
+| Screen-reader workflow | Not tested | No assistive technology was run. Automated accessibility tree inspection is not a substitute for VoiceOver/NVDA testing. |
+
+New Milestone 03 scenarios were run through the real extension in all three available headless browser projects. The two historically flaky cases also passed three additional repetitions each on branded Chrome (6/6). See `milestone-03-report.md` for totals and limitations. No Linux or Windows run was performed.
+
+Current Milestone 03 full command: `npm run test:integration` — **48/48 passed** (16 per project, 3.3 minutes). Final stability sample: `npx playwright test --project=chrome --repeat-each=3 --grep 'representative DOM fixtures|compose and annotate separate elements'` — **6/6 passed**.

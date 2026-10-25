@@ -352,8 +352,7 @@ function start(session: string, mode: "element" | "compose" = "element") {
     () => chrome.runtime.onMessage.removeListener(listener),
     { once: true },
   );
-  overlay.host.tabIndex = -1;
-  overlay.host.focus({ preventScroll: true });
+  overlay.focusSelection();
   pointer = true;
   schedule();
 }
@@ -410,7 +409,8 @@ function startFullPage(session: string) {
     restored = true;
   };
   const settledScroll = async (destination: number) => {
-    window.scrollTo({ top: destination, left: startX, behavior: "smooth" });
+    const behavior: ScrollBehavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth";
+    window.scrollTo({ top: destination, left: startX, behavior });
     let last = -1,
       stable = 0;
     const until = performance.now() + 3500;
@@ -496,11 +496,31 @@ function startFullPage(session: string) {
         bitmapWidth = 0,
         index = 0,
         topInset = 0;
+      const imageSettleDeadline = performance.now() + 12_000;
+      const settleVisibleImages = async () => {
+        const visible = [...document.images].filter((image) => {
+          const rect = image.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < viewportHeight &&
+            rect.right > 0 && rect.left < viewportWidth && !!(image.currentSrc || image.getAttribute("src")) && !image.complete;
+        });
+        if (!visible.length) return;
+        if (visible.length > 128 || performance.now() >= imageSettleDeadline)
+          throw new Error("Images are still loading. Wait for the page to finish, then try again.");
+        const remaining = Math.min(1_500, imageSettleDeadline - performance.now());
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const loaded = await Promise.race([
+          Promise.allSettled(visible.map((image) => image.decode())).then(() => true),
+          new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), remaining); }),
+        ]).finally(() => clearTimeout(timer));
+        if (!loaded) throw new Error("Images are still loading. Wait for the page to finish, then try again.");
+      };
       while (covered < pageHeight) {
         assertLive();
         if (index >= 512) throw new Error("This page is too long to capture reliably. Try a shorter page.");
         const destination = index === 0 ? 0 : Math.min(maxY, Math.max(0, covered - topInset));
         if (Math.abs(scrollY - destination) > 0.5) await settledScroll(destination);
+        await nextFrame();
+        await settleVisibleImages();
         await nextFrame();
         if (innerWidth !== viewportWidth || innerHeight !== viewportHeight || Math.max(doc.scrollHeight, body?.scrollHeight ?? 0, doc.clientHeight) !== pageHeight)
           throw new Error("The page layout changed during capture. Try again when it is stable.");
@@ -526,32 +546,29 @@ function startFullPage(session: string) {
         const raw = atob(result.image.slice(result.image.indexOf(",") + 1)),
           bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0)),
           bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
-        if (!canvas) {
-          scaleX = bitmap.width / viewportWidth;
-          scaleY = bitmap.height / viewportHeight;
-          bitmapWidth = bitmap.width;
-          const outHeight = Math.ceil(pageHeight * scaleY);
-          if (!(scaleX > 0 && scaleY > 0) || bitmap.width * outHeight > 40_000_000) {
-            bitmap.close();
-            throw new Error("This page is too large to capture safely. Use a smaller browser window or a shorter page.");
+        try {
+          if (!canvas) {
+            scaleX = bitmap.width / viewportWidth;
+            scaleY = bitmap.height / viewportHeight;
+            bitmapWidth = bitmap.width;
+            const outHeight = Math.ceil(pageHeight * scaleY);
+            if (!(scaleX > 0 && scaleY > 0) || bitmap.width > 32767 || outHeight > 32767 || bitmap.width * outHeight > 40_000_000)
+              throw new Error("This page is too large to capture safely. Use a smaller browser window or a shorter page.");
+            canvas = new OffscreenCanvas(bitmap.width, outHeight);
+            context = canvas.getContext("2d");
+            if (!context) throw new Error("Image processing is unavailable. Restart the browser and try again.");
+          } else if (bitmap.width !== bitmapWidth || Math.abs(bitmap.height / viewportHeight - scaleY) > 0.01) {
+            throw new Error("The browser viewport changed during capture. Try again.");
           }
-          canvas = new OffscreenCanvas(bitmap.width, outHeight);
-          context = canvas.getContext("2d");
-          if (!context) {
-            bitmap.close();
-            throw new Error("Image processing is unavailable. Restart the browser and try again.");
-          }
-        } else if (bitmap.width !== bitmapWidth || Math.abs(bitmap.height / viewportHeight - scaleY) > 0.01) {
+          const sourceY = Math.max(0, (before - actualY) * scaleY),
+            sourceHeight = Math.min(bitmap.height - sourceY, (after - before) * scaleY),
+            destY = before * scaleY;
+          const destHeight = Math.min(canvas.height - destY, (after - before) * scaleY);
+          if (sourceHeight > 0 && destY < canvas.height)
+            context!.drawImage(bitmap, 0, sourceY, bitmap.width, sourceHeight, 0, destY, bitmap.width, destHeight);
+        } finally {
           bitmap.close();
-          throw new Error("The browser viewport changed during capture. Try again.");
         }
-        const sourceY = Math.max(0, (before - actualY) * scaleY),
-          sourceHeight = Math.min(bitmap.height - sourceY, (after - before) * scaleY),
-          destY = before * scaleY;
-        const destHeight = Math.min(canvas.height - destY, (after - before) * scaleY);
-        if (sourceHeight > 0 && destY < canvas.height)
-          context!.drawImage(bitmap, 0, sourceY, bitmap.width, sourceHeight, 0, destY, bitmap.width, destHeight);
-        bitmap.close();
         covered = Math.max(covered, after);
         setProgress(covered, pageHeight);
         index++;

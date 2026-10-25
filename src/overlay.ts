@@ -30,6 +30,7 @@ export class Overlay {
     undoAdd?: () => void;
   }, mode: "element" | "compose" = "element") {
     this.composition = mode === "compose";
+    this.host.tabIndex = -1;
     this.host.style.cssText =
       "all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:auto!important;display:block!important;outline:none!important;cursor:crosshair!important;";
     const style = document.createElement("style");
@@ -40,7 +41,7 @@ export class Overlay {
       .toolbar{position:fixed;left:0;top:0;display:flex;align-items:center;gap:4px;padding:4px;background:#242421;color:#f5f4ef;border:1px solid #55554e;border-radius:8px;box-shadow:0 4px 20px #0003;font:12px/20px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:default;max-width:calc(100vw - 16px)}
       .copy{background:#f5f4ef;color:#242421;padding:7px 10px;font-weight:600;white-space:nowrap}.copy:hover{background:#deddd6}.copy:disabled{opacity:.7}
       svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;flex:none}
-      button{display:flex;align-items:center;justify-content:center;gap:7px;color:#f5f4ef;background:transparent;border:0;border-radius:4px;padding:6px;font:inherit;cursor:pointer}button:hover{background:#41413b}button:focus-visible{outline:2px solid #f5f4ef;outline-offset:2px}button:disabled{opacity:.3;cursor:default}kbd{font:10px/16px -apple-system,BlinkMacSystemFont,sans-serif;border:1px solid #66665c;border-radius:3px;padding:0 4px;color:#d6d5cc}
+      button{display:flex;align-items:center;justify-content:center;gap:7px;color:#f5f4ef;background:transparent;border:0;border-radius:4px;padding:6px;font:inherit;cursor:pointer}button:hover{background:#41413b}button:focus-visible{outline:2px solid #f5f4ef;outline-offset:2px}:host(:focus-visible) .toolbar{outline:2px solid #f5f4ef;outline-offset:3px}button:disabled{opacity:.3;cursor:default}kbd{font:10px/16px -apple-system,BlinkMacSystemFont,sans-serif;border:1px solid #66665c;border-radius:3px;padding:0 4px;color:#d6d5cc}
       @media(max-width:620px){.toolbar{gap:2px;padding:3px}}
     `;
     this.box.className = "box";
@@ -84,6 +85,23 @@ export class Overlay {
     else this.toolbar.append(this.copyButton, this.previewButton, cancel);
     this.root.append(style, this.box, this.label, this.toolbar);
     document.documentElement.append(this.host);
+    this.toolbar.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab") return;
+      const controls = [...this.toolbar.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+      if (!controls.length) return;
+      const focused = this.root.activeElement as HTMLButtonElement | null;
+      if (event.shiftKey && focused === controls[0]) {
+        event.preventDefault();
+        controls.at(-1)?.focus();
+      } else if (!event.shiftKey && focused === controls.at(-1)) {
+        event.preventDefault();
+        controls[0]?.focus();
+      }
+    });
+    this.focusSelection();
+  }
+  focusSelection() {
+    this.host.focus({ preventScroll: true });
   }
   show(rect: Rect | null, name = "", x?: number, y?: number) {
     this.host.style.setProperty("display", "block", "important");
@@ -292,6 +310,7 @@ export function showPreview(
   height: number,
   close: () => void,
 ): () => void {
+  const previouslyFocused = document.activeElement;
   const host = document.createElement("precision-preview");
   host.style.cssText =
     "all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:auto!important;";
@@ -312,6 +331,7 @@ export function showPreview(
     .canvas-wrap{width:max-content;height:max-content;min-width:100%;min-height:100%;display:grid;place-items:center}
     canvas{display:block;min-width:0;min-height:0;max-width:none;max-height:none;width:auto;height:auto;object-fit:contain;background:#fff;border:1px solid rgba(0,0,0,.1);box-shadow:0 8px 28px rgba(0,0,0,.12);touch-action:none}
     .annotation-tools{grid-column:1;grid-row:1;z-index:2;align-self:center;display:flex;flex-direction:column;align-items:center;gap:5px;width:46px;max-height:100%;overflow-y:auto;scrollbar-width:thin;padding:6px;background:#fff;border:1px solid #dedfdf;border-radius:12px;box-shadow:0 3px 12px rgba(0,0,0,.08)}
+    .annotation-list{position:absolute;z-index:3;top:8px;right:8px;max-width:min(260px,calc(100% - 72px));max-height:50%;overflow:auto;padding:6px 9px;background:Canvas;color:CanvasText;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:8px;box-shadow:0 3px 14px #0002;font-size:12px;pointer-events:none}.annotation-list summary,.annotation-list button{pointer-events:auto}.annotation-list summary{cursor:pointer;font-weight:600}.annotation-list ul{display:grid;gap:4px;max-height:180px;overflow:auto;margin:6px 0 0;padding:0;list-style:none}.annotation-list button{max-width:100%;padding:5px 7px;border:1px solid color-mix(in srgb,CanvasText 18%,transparent);border-radius:5px;background:Canvas;color:CanvasText;text-align:left;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.annotation-list button[aria-pressed=true]{outline:2px solid #4b83e6}
     button{font:inherit;border:0;cursor:pointer;transition:background-color .12s ease,border-color .12s ease,transform .12s ease}
     .tool-button,.close-button{display:grid;place-items:center;width:34px;height:34px;padding:0;color:#45474b;background:transparent;border:1px solid transparent;border-radius:8px}
     .tool-button svg,.close-button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -331,6 +351,7 @@ export function showPreview(
     @media(prefers-color-scheme:dark){.panel{background:#202124;color:#f1f3f4;border-color:#3b3d40}.head,.footer{background:#252629;border-color:#3b3d40}.stage{background:#1b1c1e}.meta,.status{color:#aeb0b5}.zoom-controls{background:#292b2e;border-color:#414348}.zoom-button{color:#d1d3d7}.zoom-button:hover{background:#383a3e}.annotation-tools{background:#292b2e;border-color:#414348;box-shadow:0 3px 14px #0006}.tool-button,.close-button{color:#d1d3d7}.tool-button:hover,.close-button:hover{background:#383a3e;color:#fff}.tool-button[aria-pressed=true]{color:#a9c7ff;background:#253a5f;border-color:#365681}.tool-divider{background:#484a4e}.annotation-tools input[type=color]{background:#292b2e;border-color:#55585d}.canvas-text-input{color:#f1f3f4;text-shadow:0 1px 2px rgba(0,0,0,.65)}.action-button{color:#e1e3e6;background:#292b2e;border-color:#4a4c50}.action-button:hover{background:#35373b;border-color:#65676d}.action-button.primary{color:#202124;background:#e8eaed;border-color:#e8eaed}.action-button.primary:hover{background:#fff}}
     @media(max-width:700px){.panel{inset:8px;width:calc(100vw - 16px);height:calc(100vh - 16px);grid-template-rows:56px minmax(0,1fr) auto;border-radius:12px}.head{padding:0 14px;gap:8px}.stage{grid-template-columns:48px minmax(0,1fr);padding:10px}.annotation-tools{width:40px;padding:4px;gap:3px}.tool-button{width:30px;height:30px}.tool-button svg{width:16px;height:16px}.footer{grid-template-columns:1fr;gap:8px;padding:10px 12px}.actions{justify-content:flex-end}.action-button{height:36px;padding:0 10px}.identity{gap:8px}.title{font-size:14px}.zoom-controls{gap:0;padding:2px}.zoom-button{min-width:28px;height:28px}}
     @media(max-width:420px){.meta{display:none}.action-button{font-size:12px}.actions{gap:5px}.panel{grid-template-rows:50px minmax(0,1fr) auto}.head{gap:5px}.stage{grid-template-columns:42px minmax(0,1fr);padding:7px}.annotation-tools{width:36px}.tool-button{width:28px;height:28px}.zoom-button{min-width:25px;padding:0 4px}.zoom-value{min-width:42px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
   `;
   const panel = document.createElement("section");
   panel.className = "panel";
@@ -511,8 +532,23 @@ export function showPreview(
     for (const blobUrl of blobUrls) URL.revokeObjectURL(blobUrl);
     blobUrls.length = 0;
     host.remove();
+    if (previouslyFocused instanceof HTMLElement && previouslyFocused.isConnected)
+      previouslyFocused.focus({ preventScroll: true });
     close();
   };
+  panel.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const controls = [...root.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])")];
+    if (!controls.length) return;
+    const focused = root.activeElement as HTMLElement | null;
+    if (event.shiftKey && (focused === controls[0] || !controls.includes(focused!))) {
+      event.preventDefault();
+      controls.at(-1)?.focus();
+    } else if (!event.shiftKey && (focused === controls.at(-1) || !controls.includes(focused!))) {
+      event.preventDefault();
+      controls[0]?.focus();
+    }
+  });
   const keydown = (event: KeyboardEvent) => {
     if (
       event.target instanceof HTMLInputElement ||
