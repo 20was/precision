@@ -40,13 +40,14 @@ Precision processes the selected page content and screenshot locally in your bro
 ## Listing assets to prepare
 
 - Store icon: use `public/icons/precision-128.png` (128 × 128).
-- Screenshots: the README captures are currently 1440 × 960 (3:2), so create store-sized 1280 × 800 or 640 × 400 captures from the product before submission. Do not stretch them; recapture at the target aspect ratio or crop with care.
+- Screenshots: ready in `store-assets/selection.png` and `store-assets/preview.png`. These are real captures of the unpacked production build at 1280 × 800. The website shown is a local demonstration fixture.
 - Small promo tile / marquee: optional; not required for the first listing draft.
 
 ## Submission checklist
 
 - Confirm store listing and dashboard privacy answers against the exact uploaded build.
 - Build and inspect the ZIP with `manifest.json` at its root.
+- Upload `store-assets/selection.png` and `store-assets/preview.png` as listing screenshots.
 - Verify name, version, icon, description and minimum Chrome version in the packaged manifest.
 - Submit for review only after the owner has reviewed the final ZIP and listing.
 

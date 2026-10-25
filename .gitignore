@@ -3,4 +3,4 @@ dist/
 test-results/
 playwright-report/
 .DS_Store
-precision-*-review.zip
+precision-*.zip
