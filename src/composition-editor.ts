@@ -1,4 +1,5 @@
 import { attachAnnotations, type AnnotationAttachment, type AnnotationTool } from "./annotation";
+import { clientToCanvasPoint, resizedAspectWidth } from "./shared/editor-geometry";
 
 type CompositionSource = { width: number; height: number; label: string };
 
@@ -8,6 +9,11 @@ type PlacedItem = {
   y: number;
   width: number;
   height: number;
+};
+
+type LayoutSnapshot = {
+  items: PlacedItem[];
+  selectedSource: number | null;
 };
 
 function icon(path: string): SVGSVGElement {
@@ -186,18 +192,33 @@ export function showCompositionEditor(
     fitMode: "whole" | "width" | "custom" = "width",
     gesture: { source: number; startX: number; startY: number; original: PlacedItem; resizing: boolean; changed: boolean } | undefined,
     disposed = false;
-  const history: PlacedItem[][] = [items.map((item) => ({ ...item }))];
+  const snapshotLayout = (): LayoutSnapshot => ({
+    items: items.map((item) => ({ ...item })),
+    selectedSource: items[selected]?.source ?? null,
+  });
+  const history: LayoutSnapshot[] = [snapshotLayout()];
   let historyIndex = 0;
   let annotationTool: AnnotationTool = "select";
+  type EditDomain = "composition" | "annotation";
+  const editHistory: EditDomain[] = [];
+  let editHistoryIndex = 0;
+  const canUndoEdit = () => editHistoryIndex > 0;
+  const canRedoEdit = () => editHistoryIndex < editHistory.length;
+  const recordEdit = (domain: EditDomain) => {
+    editHistory.splice(editHistoryIndex);
+    editHistory.push(domain);
+    if (editHistory.length > 100) editHistory.shift();
+    editHistoryIndex = editHistory.length;
+  };
   let annotation: AnnotationAttachment | undefined;
-  let performUndo = () => {},
-    performRedo = () => {};
-  const copyLayout = () => items.map((item) => ({ ...item }));
+  let undoLatest = () => {},
+    redoLatest = () => {};
   const pushHistory = () => {
     history.splice(historyIndex + 1);
-    history.push(copyLayout());
+    history.push(snapshotLayout());
     if (history.length > 101) history.shift();
     historyIndex = history.length - 1;
+    recordEdit("composition");
   };
   const syncLayers = () => {
     layers.replaceChildren();
@@ -279,16 +300,19 @@ export function showCompositionEditor(
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawComposition(ctx, true);
     }
-    undo.disabled = historyIndex === 0;
-    redo.disabled = historyIndex >= history.length - 1;
+    undo.disabled = !canUndoEdit();
+    redo.disabled = !canRedoEdit();
     syncLayers();
   };
   annotation = attachAnnotations(canvas, status, "", viewport, viewport, {
     drawBase: (context) => drawComposition(context, false),
     drawForeground: drawSelection,
     onToolChange: (tool) => { annotationTool = tool; },
-    onUndo: () => performUndo(),
-    onRedo: () => performRedo(),
+    onUndo: () => undoLatest(),
+    onRedo: () => redoLatest(),
+    canUndo: canUndoEdit,
+    canRedo: canRedoEdit,
+    onHistoryCommit: () => recordEdit("annotation"),
   });
   const renderZoom = () => {
     canvas.style.width = `${Math.round(canvas.width * zoomScale)}px`;
@@ -323,10 +347,7 @@ export function showCompositionEditor(
   const handle = () => Math.max(14, canvas.width / 180);
   const point = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
-    return {
-      x: Math.max(0, Math.min(canvas.width, ((event.clientX - rect.left) * canvas.width) / rect.width)),
-      y: Math.max(0, Math.min(canvas.height, ((event.clientY - rect.top) * canvas.height) / rect.height)),
-    };
+    return clientToCanvasPoint(event.clientX, event.clientY, rect, canvas.width, canvas.height) ?? { x: 0, y: 0 };
   };
   canvas.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || annotationTool !== "select") return;
@@ -369,7 +390,7 @@ export function showCompositionEditor(
       const source = sources[item.source]!,
         aspect = source.width / source.height,
         maxWidth = Math.min(canvas.width - item.x, (canvas.height - item.y) * aspect),
-        width = Math.max(Math.min(32, maxWidth), Math.min(maxWidth, gesture.original.width + dx));
+        width = resizedAspectWidth(gesture.original.width, aspect, dx, dy, maxWidth);
       item.width = width;
       item.height = width / aspect;
     } else {
@@ -390,7 +411,14 @@ export function showCompositionEditor(
     render();
   };
   canvas.addEventListener("pointerup", finishGesture);
-  canvas.addEventListener("pointercancel", finishGesture);
+  canvas.addEventListener("pointercancel", () => {
+    if (!gesture) return;
+    const item = items.find((candidate) => candidate.source === gesture!.source);
+    if (item) Object.assign(item, gesture.original);
+    gesture = undefined;
+    status.textContent = "Change canceled";
+    render();
+  });
   const removeSelected = () => {
     if (selected < 0) return;
     items.splice(selected, 1);
@@ -413,21 +441,35 @@ export function showCompositionEditor(
   const undoAction = () => {
     if (historyIndex <= 0) return;
     historyIndex--;
-    items.splice(0, items.length, ...history[historyIndex]!.map((item) => ({ ...item })));
-    selected = Math.min(selected, items.length - 1);
+    const snapshot = history[historyIndex]!;
+    items.splice(0, items.length, ...snapshot.items.map((item) => ({ ...item })));
+    selected = snapshot.selectedSource === null ? -1 : items.findIndex((item) => item.source === snapshot.selectedSource);
     status.textContent = "Undid last change";
     render();
   };
   const redoAction = () => {
     if (historyIndex >= history.length - 1) return;
     historyIndex++;
-    items.splice(0, items.length, ...history[historyIndex]!.map((item) => ({ ...item })));
-    selected = Math.min(selected, items.length - 1);
+    const snapshot = history[historyIndex]!;
+    items.splice(0, items.length, ...snapshot.items.map((item) => ({ ...item })));
+    selected = snapshot.selectedSource === null ? -1 : items.findIndex((item) => item.source === snapshot.selectedSource);
     status.textContent = "Redid change";
     render();
   };
-  performUndo = () => annotationTool === "select" ? undoAction() : annotation?.undo();
-  performRedo = () => annotationTool === "select" ? redoAction() : annotation?.redo();
+  undoLatest = () => {
+    if (!canUndoEdit()) return;
+    const domain = editHistory[--editHistoryIndex]!;
+    if (domain === "annotation") annotation?.undo();
+    else undoAction();
+    render();
+  };
+  redoLatest = () => {
+    if (!canRedoEdit()) return;
+    const domain = editHistory[editHistoryIndex++]!;
+    if (domain === "annotation") annotation?.redo();
+    else redoAction();
+    render();
+  };
   const exportBlob = async () => {
     if (!items.length) throw new Error("Add an element before exporting.");
     const output = new OffscreenCanvas(canvas.width, canvas.height),
@@ -478,11 +520,11 @@ export function showCompositionEditor(
     if (event.ctrlKey || event.metaKey) {
       if (event.key.toLowerCase() === "z") {
         event.preventDefault();
-        if (event.shiftKey) redoAction();
-        else undoAction();
+        if (event.shiftKey) redoLatest();
+        else undoLatest();
       } else if (event.key.toLowerCase() === "y") {
         event.preventDefault();
-        redoAction();
+        redoLatest();
       }
       return;
     }
@@ -514,8 +556,8 @@ export function showCompositionEditor(
   front.addEventListener("click", () => moveLayer(1));
   back.addEventListener("click", () => moveLayer(-1));
   remove.addEventListener("click", removeSelected);
-  undo.addEventListener("click", undoAction);
-  redo.addEventListener("click", redoAction);
+  undo.addEventListener("click", undoLatest);
+  redo.addEventListener("click", redoLatest);
   zoomOut.addEventListener("click", () => setZoom(zoomScale / 1.25));
   zoomIn.addEventListener("click", () => setZoom(zoomScale * 1.25));
   zoomValue.addEventListener("click", () => fit("whole"));

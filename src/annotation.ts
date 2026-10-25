@@ -2,6 +2,7 @@ export type AnnotationTool =
   "select" | "pen" | "arrow" | "rectangle" | "text" | "spotlight";
 type MarkTool = Exclude<AnnotationTool, "select">;
 type CanvasContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+import { clientToCanvasPoint } from "./shared/editor-geometry";
 
 export interface AnnotationOptions {
   drawBase?: (context: CanvasContext) => void;
@@ -9,6 +10,9 @@ export interface AnnotationOptions {
   onToolChange?: (tool: AnnotationTool) => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  canUndo?: () => boolean;
+  canRedo?: () => boolean;
+  onHistoryCommit?: () => void;
 }
 
 export type AnnotationAttachment = (() => void) & {
@@ -131,7 +135,10 @@ export function attachAnnotations(
   colorInput.title = "Annotation color";
   colorInput.addEventListener("input", () => {
     color = colorInput.value;
-    if (textEditor) textEditor.style.color = color;
+    if (textEditor) {
+      textEditor.style.color = color;
+      textEditor.dataset.annotationColor = color;
+    }
   });
   toolbar.append(colorInput);
 
@@ -145,6 +152,7 @@ export function attachAnnotations(
     );
     if (history.length > 101) history.shift();
     historyIndex = history.length - 1;
+    options.onHistoryCommit?.();
   }
   function restoreHistory(index: number) {
     historyIndex = index;
@@ -332,28 +340,13 @@ export function attachAnnotations(
       }
     }
     options.drawForeground?.(ctx);
-    undo.disabled = historyIndex === 0;
-    redo.disabled = historyIndex >= history.length - 1;
+    undo.disabled = options.canUndo ? !options.canUndo() : historyIndex === 0;
+    redo.disabled = options.canRedo ? !options.canRedo() : historyIndex >= history.length - 1;
     clear.disabled = marks.length === 0;
   };
   const pointFromEvent = (event: PointerEvent): Point => {
     const rect = canvas.getBoundingClientRect();
-    return {
-      x: Math.max(
-        0,
-        Math.min(
-          canvas.width,
-          ((event.clientX - rect.left) * canvas.width) / rect.width,
-        ),
-      ),
-      y: Math.max(
-        0,
-        Math.min(
-          canvas.height,
-          ((event.clientY - rect.top) * canvas.height) / rect.height,
-        ),
-      ),
-    };
+    return clientToCanvasPoint(event.clientX, event.clientY, rect, canvas.width, canvas.height) ?? { x: 0, y: 0 };
   };
   const startText = (point: Point, event: PointerEvent, existing?: Mark) => {
     textEditor?.blur();
@@ -367,7 +360,8 @@ export function attachAnnotations(
     editor.className = "canvas-text-input";
     editor.autocomplete = "off";
     editor.spellcheck = false;
-    editor.style.color = color;
+    editor.style.color = existing?.color ?? color;
+    editor.dataset.annotationColor = existing?.color ?? color;
     const stage = textEditorParent ?? canvas.parentElement;
     if (!stage) return;
     const imageRect = canvas.getBoundingClientRect();
@@ -393,13 +387,14 @@ export function attachAnnotations(
       editor.remove();
       if (text) {
         if (existing) {
-          const changed = existing.text !== text || existing.color !== color;
+          const markColor = editor.dataset.annotationColor ?? color;
+          const changed = existing.text !== text || existing.color !== markColor;
           existing.text = text;
-          existing.color = color;
+          existing.color = markColor;
           selectedMark = existing;
           if (changed) pushHistory();
         } else {
-          const mark: Mark = { tool: "text", color, points: [point], text };
+          const mark: Mark = { tool: "text", color: editor.dataset.annotationColor ?? color, points: [point], text };
           marks.push(mark);
           selectedMark = mark;
           pushHistory();
@@ -527,7 +522,15 @@ export function attachAnnotations(
     render();
   };
   canvas.addEventListener("pointerup", finishMark);
-  canvas.addEventListener("pointercancel", finishMark);
+  canvas.addEventListener("pointercancel", () => {
+    if (markDrag) {
+      markDrag.mark.points = markDrag.origins.map((origin) => ({ ...origin }));
+      markDrag = undefined;
+    }
+    if (draft) draft = undefined;
+    status.textContent = "Change canceled";
+    render();
+  });
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (textEditor) return;

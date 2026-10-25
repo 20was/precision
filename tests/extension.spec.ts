@@ -171,6 +171,91 @@ async function shadowCanvasMetrics(label: string, targetPage: Page) {
   await cdp.detach();
   return result.result.value as { width: number; height: number; rect: { x: number; y: number; width: number; height: number } };
 }
+async function setShadowInput(label: string, value: string, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      if (node.attributes?.includes(label)) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const result = find(child); if (result) return result; }
+    };
+    const node = find(root);
+    expect(node, `Shadow DOM input ${label}`).toBeTruthy();
+    const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: node!.backendNodeId });
+    await cdp.send("Runtime.callFunctionOn", {
+      objectId: object.objectId,
+      functionDeclaration: "function(value){this.value=value;this.dispatchEvent(new Event('input',{bubbles:true,composed:true}))}",
+      arguments: [{ value }],
+    });
+  } finally { await cdp.detach(); }
+}
+async function readShadowCanvas(label: string, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      if (node.nodeName === "CANVAS" && node.attributes?.includes(label)) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const result = find(child); if (result) return result; }
+    };
+    const node = find(root);
+    expect(node, `Shadow DOM canvas ${label}`).toBeTruthy();
+    const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: node!.backendNodeId });
+    const result = await cdp.send("Runtime.callFunctionOn", {
+      objectId: object.objectId,
+      functionDeclaration: "function(){return this.toDataURL('image/png')}",
+      returnByValue: true,
+    });
+    const dataUrl = result.result.value as string;
+    return PNG.sync.read(Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"));
+  } finally { await cdp.detach(); }
+}
+async function shadowAttribute(label: string, attribute: string, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      if (node.attributes?.includes(label)) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const result = find(child); if (result) return result; }
+    };
+    const node = find(root);
+    expect(node, `Shadow DOM node ${label}`).toBeTruthy();
+    const attrs = node!.attributes ?? [];
+    const index = attrs.indexOf(attribute);
+    return index < 0 ? null : attrs[index + 1] ?? null;
+  } finally { await cdp.detach(); }
+}
+async function centerCanvasPointInViewport(label: string, x: number, y: number, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; nodeName?: string; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      if (node.nodeName === "CANVAS" && node.attributes?.includes(label)) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const result = find(child); if (result) return result; }
+    };
+    const node = find(root);
+    expect(node, `Shadow DOM canvas ${label}`).toBeTruthy();
+    const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: node!.backendNodeId });
+    await cdp.send("Runtime.callFunctionOn", {
+      objectId: object.objectId,
+      functionDeclaration: "function(x,y){const viewport=this.parentElement.parentElement,canvas=this.getBoundingClientRect(),view=viewport.getBoundingClientRect();viewport.scrollLeft+=canvas.left-view.left+x*canvas.width/this.width-viewport.clientWidth/2;viewport.scrollTop+=canvas.top-view.top+y*canvas.height/this.height-viewport.clientHeight/2}",
+      arguments: [{ value: x }, { value: y }],
+    });
+  } finally { await cdp.detach(); }
+}
+function canvasClientPoint(metrics: { width: number; height: number; rect: { x: number; y: number; width: number; height: number } }, x: number, y: number) {
+  return { x: metrics.rect.x + (x / metrics.width) * metrics.rect.width, y: metrics.rect.y + (y / metrics.height) * metrics.rect.height };
+}
+async function exportComposition(editor: Page, path: string) {
+  const downloadEvent = editor.waitForEvent("download");
+  await clickShadowButton("Download PNG", editor);
+  const download = await downloadEvent;
+  await download.saveAs(path);
+  return PNG.sync.read(await readFile(path));
+}
 test.beforeEach(async ({}, info) => {
   const executablePath = paths[info.project.name];
   if (executablePath) {
@@ -554,7 +639,9 @@ test("compose and annotate separate elements in an editable canvas", async ({}, 
   const corner = screenPoint(itemX + 480 - handle / 2, 48 + 320 - handle / 2);
   await editor!.mouse.move(corner.x, corner.y);
   await editor!.mouse.down();
-  await editor!.mouse.move(corner.x + 24 * canvasMetrics.rect.width / canvasMetrics.width, corner.y + 16 * canvasMetrics.rect.height / canvasMetrics.height);
+  // Resize from a vertical-only drag: a bottom-right handle should follow
+  // either pointer axis while preserving the captured element's aspect ratio.
+  await editor!.mouse.move(corner.x, corner.y + 24 * canvasMetrics.rect.height / canvasMetrics.height);
   await editor!.mouse.up();
   await editor!.keyboard.press("Control+z");
   await editor!.keyboard.press("Control+Shift+z");
@@ -619,6 +706,373 @@ test("compose and annotate separate elements in an editable canvas", async ({}, 
   }
   expect(clipboardPng, "composition clipboard contains a PNG with the exported dimensions").toBeDefined();
   expect(clipboardPng!.data).toEqual(image.data);
+  const closed = editor!.waitForEvent("close");
+  const escape = editor!.keyboard.press("Escape").catch(() => undefined);
+  await Promise.all([closed, escape]);
+});
+
+test("annotation geometry, history and export pixels stay stable across zoom", async ({}, info) => {
+  await page.locator("#solid").evaluate((el) => {
+    (el as HTMLElement).style.cssText = "position:fixed;left:40px;top:140px;width:240px;height:160px;background:rgb(32,128,192);z-index:5";
+  });
+  await activate("compose");
+  const target = await page.locator("#solid").boundingBox();
+  expect(target).not.toBeNull();
+  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2);
+  await clickShadowButton("Add selected element to composition");
+  await clickShadowButton("Compose 1 captured element");
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  await expect.poll(() => {
+    editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+    return !!editor;
+  }).toBe(true);
+  expect(editor).toBeTruthy();
+  await editor!.bringToFront();
+  await expect(editor!.locator("precision-composition")).toHaveCount(1);
+  const label = "Editable composition with 1 elements";
+  await clickShadowButton("Select div, element 1", editor!);
+  await editor!.keyboard.press("0");
+  if (info.project.name === "chromium") {
+    await expect(editor!.locator("precision-composition")).toHaveScreenshot("composition-selected.png", { animations: "disabled", caret: "hide" });
+  }
+
+  const draw = async (points: Array<{ x: number; y: number }>) => {
+    await centerCanvasPointInViewport(label, points[0]!.x, points[0]!.y, editor!);
+    const metrics = await shadowCanvasMetrics(label, editor!);
+    const start = canvasClientPoint(metrics, points[0]!.x, points[0]!.y);
+    await editor!.mouse.move(start.x, start.y);
+    await editor!.mouse.down();
+    for (const point of points.slice(1)) {
+      const at = canvasClientPoint(metrics, point.x, point.y);
+      await editor!.mouse.move(at.x, at.y, { steps: 3 });
+    }
+    await editor!.mouse.up();
+  };
+  const pixel = (image: PNG, x: number, y: number) => {
+    const offset = (Math.round(y) * image.width + Math.round(x)) * 4;
+    return [...image.data.subarray(offset, offset + 4)];
+  };
+  const redLike = (value: number[]) => value[0]! > value[1]! * 1.3 && value[0]! > value[2]! * 1.25;
+  const countGreen = (image: PNG, bounds: { x: number; y: number; width: number; height: number }) => {
+    let count = 0;
+    for (let y = Math.max(0, Math.floor(bounds.y)); y < Math.min(image.height, Math.ceil(bounds.y + bounds.height)); y++)
+      for (let x = Math.max(0, Math.floor(bounds.x)); x < Math.min(image.width, Math.ceil(bounds.x + bounds.width)); x++) {
+        const offset = (y * image.width + x) * 4, redChannel = image.data[offset]!, greenChannel = image.data[offset + 1]!, blueChannel = image.data[offset + 2]!;
+        if (greenChannel > redChannel * 1.4 && greenChannel > blueChannel * 1.4) count++;
+      }
+    return count;
+  };
+  const countRed = (image: PNG, bounds: { x: number; y: number; width: number; height: number }) => {
+    let count = 0;
+    for (let y = Math.max(0, Math.floor(bounds.y)); y < Math.min(image.height, Math.ceil(bounds.y + bounds.height)); y++)
+      for (let x = Math.max(0, Math.floor(bounds.x)); x < Math.min(image.width, Math.ceil(bounds.x + bounds.width)); x++) {
+        const offset = (y * image.width + x) * 4, redChannel = image.data[offset]!, greenChannel = image.data[offset + 1]!, blueChannel = image.data[offset + 2]!;
+        if (redChannel > greenChannel * 1.3 && redChannel > blueChannel * 1.25) count++;
+      }
+    return count;
+  };
+  const red: [number, number, number] = [229, 72, 77];
+
+  // Pen: a continuous stroke is one undoable operation at a fitted ~50% view.
+  for (let i = 0; i < 3; i++) await clickShadowButton("Zoom out (-)", editor!);
+  const halfView = await shadowCanvasMetrics(label, editor!);
+  expect(halfView.rect.width / halfView.width).toBeGreaterThan(0.48);
+  expect(halfView.rect.width / halfView.width).toBeLessThan(0.55);
+  await clickShadowButton("Pen", editor!);
+  await draw([{ x: 10, y: 20 }, { x: 25, y: 20 }, { x: 40, y: 20 }]);
+  await editor!.keyboard.press("Control+z");
+  let current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 25, 20)).toEqual([255, 255, 255, 255]);
+  await editor!.keyboard.press("Control+Shift+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 25, 20)).toEqual([...red, 255]);
+  expect(redLike(pixel(current, 25, 19))).toBe(true);
+  expect(redLike(pixel(current, 25, 17))).toBe(false);
+
+  // Select and move the whole stroke; undo/redo restore it as a single gesture.
+  await clickShadowButton("Select", editor!);
+  await centerCanvasPointInViewport(label, 25, 20, editor!);
+  let metrics = await shadowCanvasMetrics(label, editor!);
+  const from = canvasClientPoint(metrics, 25, 20), to = canvasClientPoint(metrics, 25, 30);
+  await editor!.mouse.move(from.x, from.y);
+  await editor!.mouse.down();
+  await editor!.mouse.move(to.x, to.y, { steps: 3 });
+  await editor!.mouse.up();
+  await editor!.keyboard.press("Control+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 25, 20)).toEqual([...red, 255]);
+  await editor!.keyboard.press("Control+Shift+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 25, 30)).toEqual([...red, 255]);
+
+  // Horizontal, short, vertical and diagonal arrows have explicit endpoint checks.
+  for (let i = 0; i < 3; i++) await clickShadowButton("Zoom in (+)", editor!);
+  await clickShadowButton("Arrow", editor!);
+  await draw([{ x: 70, y: 20 }, { x: 115, y: 20 }]);
+  await draw([{ x: 140, y: 20 }, { x: 145, y: 20 }]);
+  await draw([{ x: 70, y: 60 }, { x: 70, y: 100 }]);
+  await draw([{ x: 90, y: 120 }, { x: 120, y: 150 }]);
+  current = await readShadowCanvas(label, editor!);
+  expect(redLike(pixel(current, 100, 20))).toBe(true);
+  expect(redLike(pixel(current, 140, 20))).toBe(true);
+  expect(redLike(pixel(current, 70, 90))).toBe(true);
+  expect(redLike(pixel(current, 101, 12))).toBe(true);
+  expect(redLike(pixel(current, 62, 86))).toBe(true);
+  expect(redLike(pixel(current, 78, 86))).toBe(true);
+  expect(redLike(pixel(current, 110, 140))).toBe(true);
+  expect(pixel(current, 125, 20)).toEqual([255, 255, 255, 255]);
+
+  // Rectangle uses both drag directions and is still stored in image coordinates at ~156%.
+  await clickShadowButton("Zoom in (+)", editor!);
+  await clickShadowButton("Zoom in (+)", editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  expect(metrics.rect.width / metrics.width).toBeGreaterThan(1.45);
+  expect(metrics.rect.width / metrics.width).toBeLessThan(1.65);
+  await clickShadowButton("Rectangle", editor!);
+  await draw([{ x: 180, y: 100 }, { x: 140, y: 60 }]);
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 160, 60)).toEqual([...red, 255]);
+  expect(pixel(current, 140, 80)).toEqual([...red, 255]);
+
+  // At the largest supported editor zoom, pointer geometry remains in image pixels.
+  await clickShadowButton("Zoom in (+)", editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  expect(metrics.rect.width / metrics.width).toBeGreaterThan(1.9);
+  expect(metrics.rect.width / metrics.width).toBeLessThan(2.05);
+  await clickShadowButton("Pen", editor!);
+  await draw([{ x: 200, y: 280 }, { x: 220, y: 280 }]);
+  current = await readShadowCanvas(label, editor!);
+  expect(redLike(pixel(current, 210, 280))).toBe(true);
+
+  // Browser zoom and editor zoom are separate scales; the same world mapping applies.
+  await editor!.bringToFront();
+  await worker.evaluate(async () => {
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.tabs.setZoom(active!.id!, 1.25);
+  });
+  await editor!.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await clickShadowButton("Pen", editor!);
+  await draw([{ x: 65, y: 70 }, { x: 85, y: 70 }]);
+
+  // Text is edited in place: active input hides the old mark; edit history is chronological even in Select mode.
+  await worker.evaluate(async () => {
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.tabs.setZoom(active!.id!, 1);
+  });
+  await editor!.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await clickShadowButton("Text", editor!);
+  expect(await shadowAttribute("Text", "aria-pressed", editor!)).toBe("true");
+  await setShadowInput("Annotation color", "#e5484d", editor!);
+  await draw([{ x: 300, y: 20 }]);
+  expect(await shadowAttribute("Type annotation on screenshot", "class", editor!)).toBe("canvas-text-input");
+  await editor!.keyboard.type("Old");
+  await editor!.keyboard.press("Enter");
+  current = await readShadowCanvas(label, editor!);
+  expect(countRed(current, { x: 298, y: 17, width: 150, height: 30 })).toBeGreaterThan(0);
+  await clickShadowButton("Select", editor!);
+  await setShadowInput("Annotation color", "#00aa00", editor!);
+  await centerCanvasPointInViewport(label, 310, 25, editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const textPoint = canvasClientPoint(metrics, 310, 25);
+  await editor!.mouse.click(textPoint.x, textPoint.y);
+  await editor!.keyboard.press("Control+a");
+  await editor!.keyboard.type("New text");
+  current = await readShadowCanvas(label, editor!);
+  expect(countRed(current, { x: 298, y: 17, width: 130, height: 30 })).toBe(0);
+  await setShadowInput("Annotation color", "#00aa00", editor!);
+  await editor!.keyboard.press("Enter");
+  current = await readShadowCanvas(label, editor!);
+  expect(countGreen(current, { x: 298, y: 17, width: 150, height: 30 })).toBeGreaterThan(0);
+  await editor!.keyboard.press("Control+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(countRed(current, { x: 298, y: 17, width: 100, height: 30 })).toBeGreaterThan(0);
+  expect(countGreen(current, { x: 298, y: 17, width: 150, height: 30 })).toBe(0);
+  await editor!.keyboard.press("Control+Shift+z");
+
+  await centerCanvasPointInViewport(label, 310, 25, editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const textFrom = canvasClientPoint(metrics, 310, 25), textTo = canvasClientPoint(metrics, 350, 25);
+  await editor!.mouse.move(textFrom.x, textFrom.y);
+  await editor!.mouse.down();
+  await editor!.mouse.move(textTo.x, textTo.y, { steps: 3 });
+  await editor!.mouse.up();
+  current = await readShadowCanvas(label, editor!);
+  expect(countGreen(current, { x: 298, y: 17, width: 40, height: 30 })).toBe(0);
+  expect(countGreen(current, { x: 338, y: 17, width: 130, height: 30 })).toBeGreaterThan(0);
+  await editor!.keyboard.press("Control+z");
+  await editor!.keyboard.press("Control+Shift+z");
+
+  // Empty text creates no mark or history item.
+  await clickShadowButton("Text", editor!);
+  await draw([{ x: 500, y: 20 }]);
+  await editor!.keyboard.press("Enter");
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 500, 20)).toEqual([255, 255, 255, 255]);
+
+  // A boundary-crossing spotlight preserves its bright interior; fixed 58% opacity has a stable flat-pixel result.
+  for (let i = 0; i < 3; i++) await clickShadowButton("Zoom out (-)", editor!);
+  await clickShadowButton("Spotlight", editor!);
+  await draw([{ x: 0, y: 0 }, { x: 100, y: 100 }]);
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 95, 95)).toEqual([32, 128, 192, 255]);
+  expect(pixel(current, 200, 200)).toEqual([23, 64, 93, 255]);
+  expect(pixel(current, 70, 70)).toEqual([...red, 255]);
+  await draw([{ x: 200, y: 200 }, { x: 250, y: 250 }]);
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 95, 95)).toEqual([23, 64, 93, 255]);
+  expect(pixel(current, 220, 220)).toEqual([32, 128, 192, 255]);
+  await editor!.keyboard.press("Control+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(pixel(current, 95, 95)).toEqual([32, 128, 192, 255]);
+  await editor!.keyboard.press("Control+Shift+z");
+
+  // Download and clipboard are the same decoded image at unchanged world geometry.
+  await clickShadowButton("Select", editor!);
+  await centerCanvasPointInViewport(label, 550, 20, editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const blank = canvasClientPoint(metrics, 550, 20);
+  await editor!.mouse.click(blank.x, blank.y);
+  const output = await exportComposition(editor!, info.outputPath("editor-precision-annotations.png"));
+  expect(pixel(output, 95, 95)).toEqual([23, 64, 93, 255]);
+  expect(pixel(output, 220, 220)).toEqual([32, 128, 192, 255]);
+  await context.grantPermissions(["clipboard-read"]);
+  await clickShadowButton("Copy composition", editor!);
+  let clipboardPng: PNG | undefined;
+  for (let attempt = 0; attempt < 30 && !clipboardPng; attempt++) {
+    try {
+      const candidates = await editor!.evaluate(async () => {
+        const items = await navigator.clipboard.read();
+        const pngs: number[][] = [];
+        for (const item of items) if (item.types.includes("image/png"))
+          pngs.push(Array.from(new Uint8Array(await (await item.getType("image/png")).arrayBuffer())));
+        return pngs;
+      });
+      for (const bytes of candidates) {
+        const candidate = PNG.sync.read(Buffer.from(bytes));
+        if (candidate.width === output.width && candidate.height === output.height) clipboardPng = candidate;
+      }
+    } catch { /* wait for the browser clipboard to finish publishing the image */ }
+    if (!clipboardPng) await editor!.waitForTimeout(100);
+  }
+  expect(clipboardPng, "clipboard contains the exported PNG dimensions").toBeDefined();
+  expect(clipboardPng!.data).toEqual(output.data);
+  const closed = editor!.waitForEvent("close");
+  const escape = editor!.keyboard.press("Escape").catch(() => undefined);
+  await Promise.all([closed, escape]);
+});
+
+test("overlapping composition uses topmost hits and chronological history", async ({}, info) => {
+  await page.evaluate(() => {
+    document.querySelectorAll("#overlap-blue,#overlap-yellow").forEach((element) => element.remove());
+    for (const [id, color, left] of [["overlap-blue", "rgb(24,80,220)", "100px"], ["overlap-yellow", "rgb(230,190,30)", "750px"]]) {
+      const element = document.createElement("div");
+      element.id = id;
+      element.style.cssText = `position:fixed;z-index:99999;left:${left};top:500px;width:120px;height:120px;background:${color}`;
+      document.body.append(element);
+    }
+  });
+  await activate("compose");
+  for (const id of ["#overlap-blue", "#overlap-yellow"]) {
+    const box = await page.locator(id).boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await clickShadowButton("Add selected element to composition");
+    await expect(page.locator("precision-selector")).toHaveCount(1);
+    await page.waitForTimeout(600);
+  }
+  await clickShadowButton("Compose 2 captured elements");
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  await expect.poll(() => {
+    editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+    return !!editor;
+  }).toBe(true);
+  expect(editor).toBeTruthy();
+  await editor!.bringToFront();
+  await expect(editor!.locator("precision-composition")).toHaveCount(1);
+  const label = "Editable composition with 2 elements";
+  let metrics = await shadowCanvasMetrics(label, editor!);
+  expect(metrics.width).toBe(336);
+  expect(metrics.height).toBe(604);
+  const at = (x: number, y: number) => canvasClientPoint(metrics, x, y);
+  let image = await exportComposition(editor!, info.outputPath("overlap-before-move.png"));
+  let offset = (436 * image.width + 168) * 4;
+  expect([...image.data.subarray(offset, offset + 4)]).toEqual([230, 190, 30, 255]);
+  const first = at(168, 436), second = at(168, 168);
+  await editor!.mouse.move(first.x, first.y);
+  await editor!.mouse.down();
+  await editor!.mouse.move(second.x, second.y, { steps: 8 });
+  await editor!.mouse.up();
+
+  // The topmost item under an overlap receives the click and drag.
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const overlap = at(168, 168);
+  await editor!.mouse.click(overlap.x, overlap.y);
+  expect(await shadowAttribute("Select div, element 2", "aria-pressed", editor!)).toBe("true");
+  image = await exportComposition(editor!, info.outputPath("overlap-topmost-yellow.png"));
+  expect(image.width).toBe(336);
+  expect(image.height).toBe(604);
+  const pixel = (x: number, y: number) => {
+    const offset = (y * image.width + x) * 4;
+    return [...image.data.subarray(offset, offset + 4)];
+  };
+  expect(pixel(168, 168)).toEqual([230, 190, 30, 255]);
+
+  // A vertical-only resize follows the bottom-right handle and stays aspect locked.
+  await clickShadowButton("Select div, element 2", editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const handle = Math.max(14, metrics.width / 180);
+  const handlePoint = at(48 + 240 - handle / 2, 48 + 240 - handle / 2);
+  const resizeTo = { x: handlePoint.x, y: handlePoint.y + 24 * metrics.rect.height / metrics.height };
+  await editor!.mouse.move(handlePoint.x, handlePoint.y);
+  await editor!.mouse.down();
+  await editor!.mouse.move(resizeTo.x, resizeTo.y, { steps: 4 });
+  await editor!.mouse.up();
+  image = await exportComposition(editor!, info.outputPath("overlap-resized.png"));
+  offset = (300 * image.width + 300) * 4;
+  expect([...image.data.subarray(offset, offset + 4)]).toEqual([230, 190, 30, 255]);
+  await editor!.keyboard.press("Control+z");
+  image = await exportComposition(editor!, info.outputPath("overlap-resize-undo.png"));
+  offset = (300 * image.width + 300) * 4;
+  expect([...image.data.subarray(offset, offset + 4)]).toEqual([255, 255, 255, 255]);
+  await editor!.keyboard.press("Control+Shift+z");
+
+  // Reorder changes the visible topmost object, but not its stable selection identity.
+  await clickShadowButton("Send backward", editor!);
+  expect(await shadowAttribute("Select div, element 1", "aria-pressed", editor!)).toBe("true");
+  image = await exportComposition(editor!, info.outputPath("overlap-blue-on-top.png"));
+  offset = (168 * image.width + 168) * 4;
+  expect([...image.data.subarray(offset, offset + 4)]).toEqual([24, 80, 220, 255]);
+  await editor!.keyboard.press("Control+z");
+  expect(await shadowAttribute("Select div, element 2", "aria-pressed", editor!)).toBe("true");
+  await editor!.keyboard.press("Control+Shift+z");
+
+  // Annotation layers render above every composition object. Removing an object
+  // and undoing it must leave the annotation intact; the next undo removes it.
+  await clickShadowButton("Rectangle", editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const from = at(155, 155), to = at(181, 181);
+  await editor!.mouse.move(from.x, from.y);
+  await editor!.mouse.down();
+  await editor!.mouse.move(to.x, to.y, { steps: 4 });
+  await editor!.mouse.up();
+  expect(await shadowAttribute("Select div, element 1", "aria-pressed", editor!)).toBe("true");
+  await clickShadowButton("Remove", editor!);
+  image = await exportComposition(editor!, info.outputPath("overlap-after-remove.png"));
+  offset = (155 * image.width + 168) * 4;
+  expect(image.data[offset]).toBeGreaterThan(180);
+  expect(image.data[offset + 1]).toBeLessThan(120);
+  await editor!.keyboard.press("Control+z");
+  image = await exportComposition(editor!, info.outputPath("overlap-remove-undo.png"));
+  offset = (155 * image.width + 168) * 4;
+  expect(image.data[offset]).toBeGreaterThan(180);
+  await editor!.keyboard.press("Control+z");
+  image = await exportComposition(editor!, info.outputPath("overlap-annotation-undo.png"));
+  offset = (155 * image.width + 168) * 4;
+  expect([...image.data.subarray(offset, offset + 4)]).toEqual([24, 80, 220, 255]);
+  await editor!.keyboard.press("Control+Shift+z");
+  image = await exportComposition(editor!, info.outputPath("overlap-annotation-redo.png"));
+  offset = (155 * image.width + 168) * 4;
+  expect(image.data[offset]).toBeGreaterThan(180);
   const closed = editor!.waitForEvent("close");
   const escape = editor!.keyboard.press("Escape").catch(() => undefined);
   await Promise.all([closed, escape]);

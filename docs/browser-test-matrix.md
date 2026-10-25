@@ -6,9 +6,9 @@ Tests use Playwright 1.64.1 with the production `dist/` build, local fixture pag
 
 | Engine | Version | Status |
 | --- | --- | --- |
-| Playwright bundled Chromium | 156.0.8078.4 | Real-extension integration suite available; pixel capture, clipboard, download, element selection, viewport capture, composition and full-page paths exercised. |
-| Google Chrome | 155.0.8059.85 | Installed and exercised through Playwright's extension-loading CDP support. |
-| Brave | 155.0.8059.40 (1.97.56) | Installed and exercised through Playwright's extension-loading CDP support. |
+| Playwright bundled Chromium | 156.0.8078.4 | 10/10 real-extension tests passed, including editor pixel tests, clipboard/download equivalence, visible and full-page capture. |
+| Google Chrome | 155.0.8059.85 | 10/10 real-extension tests passed through Playwright's extension-loading CDP support. |
+| Brave | 155.0.8059.40 (1.97.56) | 10/10 real-extension tests passed through Playwright's extension-loading CDP support. |
 
 ## Behavior matrix
 
@@ -37,3 +37,17 @@ Tests use Playwright 1.64.1 with the production `dist/` build, local fixture pag
 Final command outcomes and total count are maintained in [test-report.md](test-report.md). The intended run is `npm run test:integration`; screenshot fixtures include actual clipboard readback and PNG decode, not only a successful button handler. The test-only profile grants `clipboard-read`; production asks for write-only workflow capability.
 
 For manual native-window checks, use [README.md](../README.md#manual-smoke-check). Chrome and Brave headless results do not establish screen-reader support, OS clipboard behavior on every platform, or Web Store approval.
+
+## Editor precision additions (2026-10-25)
+
+| Case | Status | Evidence / boundary |
+| --- | --- | --- |
+| Pen, arrow, rectangle, text, spotlight output | Verified in Playwright Chromium | Real extension UI on a flat-color image; decoded PNG pixel assertions cover continuous/short strokes, arrow orientations, reverse rectangle drag, text create/edit/move/empty commit, spotlight boundary and dimming math, and undo/redo. |
+| Composition dense overlap | Verified in Playwright Chromium | Two overlapping opaque fixture captures; topmost selection, move, resize, reorder, remove, annotation stacking, and undo/redo checked against decoded output pixels. |
+| Editor zoom and world geometry | Verified in Playwright Chromium | CSS client/image pixel round trips at 0.5x, 1x, 1.5x, and 2x in unit tests; real editor zoom changes independently from browser zoom. Browser zoom 125%, DPR 2. |
+| Download and clipboard equivalence | Verified in Playwright Chromium | Downloaded and read-back clipboard PNGs are decoded and their dimensions/RGBA bytes compared. |
+| Composition visual snapshot | Verified in Playwright Chromium | Golden for a selected composition at desktop viewport. No automatic snapshot updates. |
+| Branded Chrome editor precision cases | Verified | Annotation pixel/history and overlapping composition UI tests passed on Chrome 155.0.8059.85. |
+| Brave editor precision cases | Verified | Annotation pixel/history and overlapping composition UI tests passed on Brave 155.0.8059.40. |
+
+Final command: `npm run test:integration` — 30 passed across three real-extension browser projects (10 per project, 2.4 minutes). Browser runs were headless on macOS with forced DPR 2. They do not establish native-window, screen-reader, or other operating-system behavior.
