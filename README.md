@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/precision-banner.svg" alt="Precision — capture the part you actually need" width="100%" />
 
-  <p><strong>A local-first screenshot tool for Chrome and Brave.</strong><br />Select an element on the page, then copy it in place or save a PNG.</p>
+  <p><strong>A local-first screenshot tool for Chrome and Brave.</strong><br />Capture the visible viewport, a page element, or a full page for annotation.</p>
 
   <p>
     <a href="https://github.com/20was/precision/actions/workflows/ci.yml"><img src="https://github.com/20was/precision/actions/workflows/ci.yml/badge.svg" alt="Continuous integration" /></a>
@@ -23,12 +23,16 @@ Real screenshots of the unpacked extension running on the included local showcas
 ## What it does
 
 - Highlights useful DOM elements as you move the pointer.
+- Captures the current visible viewport in one step and opens it in the screenshot editor.
 - Copies a visible element capture directly from the pointer controls, or opens an in-page preview.
-- Saves a PNG without opening another tab.
+- Adds pen, arrow, rectangle, text and spotlight annotations to the captured image, with color selection, undo and clear.
+- Copies or saves the annotated image as PNG without changing the source webpage or opening another tab.
+- Captures vertically scrolling pages, then opens the stitched image in the annotation editor in a new tab.
+- Captures multiple page elements and places them as editable, movable objects on a composition canvas. Annotate the combined layout with the same pen, arrow, rectangle, text and spotlight tools; annotations are included in the exported PNG.
 - Uses temporary tab access only after you invoke the extension.
 - Keeps screenshots on your device and discards them when you close the preview.
 
-Precision captures the visible pixels inside an element's bounds. Overlapping page content remains in the image; it does not re-render the element in isolation. Full-page capture, editing, annotation, history, and cloud features are outside this release.
+Element captures include the visible pixels inside an element's bounds. Full-page capture scrolls through a vertically scrolling page and stitches the visible segments. Precision compensates for wide sticky bars at the top; fixed or sticky UI elsewhere can still repeat. Annotation tools draw on the screenshot canvas only; the source webpage is not edited. Images are processed locally, without screenshot history or cloud features.
 
 ## Install from source
 
@@ -44,10 +48,10 @@ npm run build
 1. Open `chrome://extensions` in Chrome or `brave://extensions` in Brave.
 2. Turn on **Developer mode** and choose **Load unpacked**.
 3. Select the repository's `dist` folder.
-4. Pin Precision, open a regular webpage, and choose **Start selecting** from its toolbar popup.
-5. Hover an element. Choose **Copy** for an in-place copy, or **Preview** / press Enter to review and download.
+4. Pin Precision, open a regular webpage, and choose **Start selecting**, **Capture visible area**, **Capture full page**, or **Compose elements** from its toolbar popup.
+5. Hover an element. Choose **Copy** for an in-place copy, or **Preview** / press Enter to annotate, copy, or download.
 
-After rebuilding, reload Precision from the extensions page and refresh the webpage. Browser internal pages, the Chrome Web Store, PDF viewers, and file URLs do not allow the DOM access this feature needs.
+After rebuilding, reload Precision from the extensions page and refresh the webpage. **Capture visible area** opens the current viewport in the screenshot editor. Full-page capture supports vertical scrolling only and opens the editor in a new tab. Composition mode lets you add up to 24 visible element captures, then move, resize, reorder, remove, undo, annotate, copy, or download them from its editor tab. Browser internal pages, the Chrome Web Store, PDF viewers, and file URLs do not allow capture access.
 
 ## Keyboard controls
 
@@ -57,6 +61,8 @@ After rebuilding, reload Precision from the extensions page and refresh the webp
 | `Enter`      | Capture the current target and open the preview |
 | `Arrow Up`   | Select the nearest visible parent               |
 | `Arrow Down` | Select the first visible direct child           |
+
+In the screenshot editor, tall captures open fit to width so their content is easier to read; shorter images open fit to the whole view. Use the `−` and `+` controls to zoom, click the percentage to fit the whole image, or press `-`, `+`, and `0` from the keyboard. The image area scrolls when zoomed in; annotations stay aligned with the image.
 
 Selection follows the pointer while the controls stay near it. When the selected element is too small, the controls move beside its bounds. The capture is limited to the visible portion of the element.
 
@@ -85,7 +91,7 @@ The README images are generated from the real unpacked extension on [`showcase.h
 
 ## Privacy and permissions
 
-Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It processes selected webpage content and screenshots locally only for the capture you request; it does not transmit or retain them. It does not request broad website access, browsing history, persistent storage, or download permission. See the [Privacy Policy](PRIVACY.md) and [architecture notes](docs/architecture.md) for details.
+Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It processes screenshots locally. Full-page handoff briefly uses extension-origin IndexedDB and deletes the data when the editor consumes it. No screenshots are uploaded or kept as history. It does not request broad website access, browsing history, or download permission. See the [Privacy Policy](PRIVACY.md) and [architecture notes](docs/architecture.md) for details.
 
 ## Project notes
 

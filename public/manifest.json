@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Precision \u2014 Smart Element Capture",
-  "description": "Select a webpage element and copy or download its visible pixels. Private, local screenshot capture.",
-  "version": "0.1.2",
+  "description": "Capture the visible viewport, webpage elements or a full page; compose, annotate, copy and download locally.",
+  "version": "0.1.6",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "clipboardWrite"],
   "action": {

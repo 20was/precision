@@ -4,8 +4,9 @@ export interface CaptureMessage {
   session: string;
   rect: Rect;
   viewport: Viewport;
-  delivery: "preview" | "copy";
+  delivery: "preview" | "copy" | "composeItem";
 }
+export type StartMode = "element" | "visible" | "fullPage" | "compose";
 export type Result<T = undefined> =
   { ok: true; value: T } | { ok: false; error: string };
 export const failure = (error: unknown): Result<never> => ({
@@ -25,7 +26,7 @@ export function isCapture(value: unknown): value is CaptureMessage {
   if (
     !record(value) ||
     value.type !== "capture" ||
-    !(value.delivery === "preview" || value.delivery === "copy") ||
+    !(value.delivery === "preview" || value.delivery === "copy" || value.delivery === "composeItem") ||
     !token(value.session) ||
     !validRect(value.rect) ||
     !record(value.viewport)

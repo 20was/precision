@@ -1,6 +1,6 @@
 # Chrome Web Store listing draft
 
-This is draft copy for review before a store submission. The Chrome Web Store dashboard's privacy answers must match the current build and this disclosure.
+This is draft copy for the local package, version 0.1.6. It does not change any package already submitted to the dashboard; update the store listing and privacy answers only when uploading this build.
 
 ## Product name
 
@@ -8,31 +8,34 @@ Precision — Smart Element Capture
 
 ## Short description
 
-Select a webpage element and copy or download its visible pixels.
+Capture the visible viewport, webpage elements, or a full page, then compose, annotate, copy or download.
 
 ## Detailed description
 
 Capture just the part of a webpage you need.
 
-Move over a page to highlight an element, then copy its visible pixels directly from the page or open a small preview to download a PNG. Precision keeps you on the current tab and does not upload or store screenshots.
+Capture the visible viewport in one step, or move over a page to highlight an element and copy its visible pixels directly from the page or open the editor to annotate and download a PNG. Choose **Capture full page** to scroll through a vertically scrolling page and open the stitched capture in the editor. Choose **Compose elements** to add separate page elements to a canvas, then move, resize, reorder, annotate and export them together. Precision processes screenshots locally and does not upload them.
 
 **How it works**
 
 - Select a visible page element with the pointer.
+- Capture the current viewport and open it in the screenshot editor.
 - Copy the capture in place, or preview and download it as PNG.
 - Use the keyboard to move to a nearby parent or child element, capture, or cancel.
+- Capture a vertically scrolling page, then annotate, copy or download the resulting PNG.
+- Add separate visible element captures to an editable composition canvas.
 
-Captures include only the selected element's visible rectangular area. They may include content that overlaps the element. Full-page capture and editing tools are not included.
+Element captures include only the selected element's visible rectangular area and may include overlapping content. Composition captures include up to 24 separate elements, limited to their visible rectangles. Full-page captures support vertical scrolling; fixed and sticky elements may repeat. Horizontal scrolling is not supported.
 
 **Privacy**
 
-Precision processes the selected page content and screenshot locally in your browser only to provide the capture you requested. It does not transmit this content, use analytics, or retain screenshot history. Copying or downloading happens only after you choose that action. Read the [Privacy Policy](https://github.com/20was/precision/blob/main/PRIVACY.md).
+Precision processes page content and screenshots locally only to provide the capture you requested. Editor handoffs briefly use local extension IndexedDB and delete chunks when consumed. It does not transmit this content or retain screenshot history. Copying or downloading happens only after you choose that action. Read the [Privacy Policy](https://github.com/20was/precision/blob/main/PRIVACY.md).
 
 ## Dashboard disclosure notes
 
-- Single purpose: capture the visible pixels of a webpage element selected by the user, then copy or download that image on request.
+- Single purpose: capture webpage pixels selected by the user, then compose, annotate, copy or download the image on request.
 - Page content and pointer/key input are accessed only after the user invokes the extension and starts selection. They are processed locally for target selection and capture, and are not transmitted to the developer or a third party.
-- Screenshot and geometry data are temporarily held in memory during the requested operation and discarded when the operation/preview ends.
+- Screenshot data is temporarily held in memory; full-page transfer chunks are briefly stored in extension-origin IndexedDB and deleted when the editor consumes them. No history is kept.
 - No accounts, analytics, advertising, or remote code.
 - Permissions: `activeTab`, `scripting`, `clipboardWrite`.
 - Privacy policy URL: `https://github.com/20was/precision/blob/main/PRIVACY.md`.
