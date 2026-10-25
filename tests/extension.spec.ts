@@ -11,12 +11,16 @@ import {
 import { PNG } from "pngjs";
 import { readFile, access } from "node:fs/promises";
 import { resolve } from "node:path";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 let context: BrowserContext,
   worker: Worker,
   page: Page,
   browserCDP: CDPSession,
-  id: string;
+  id: string,
+  browserProfile: string | undefined;
 const selectAllShortcut = process.platform === "darwin" ? "Meta+a" : "Control+a";
+const execFileAsync = promisify(execFile);
 const paths: Record<string, string> = {
   chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   brave: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
@@ -146,6 +150,20 @@ async function activate(mode: "element" | "visible" | "fullPage" | "compose" = "
     "Activation including popup ms",
     Math.round(performance.now() - started),
   );
+}
+async function startMacFootprintSampler(outputPath: string) {
+  const profile = browserProfile;
+  if (!profile) throw new Error("Could not identify the active Playwright Chromium profile.");
+  const { stdout } = await execFileAsync("ps", ["-Ao", "pid=,command="], { maxBuffer: 8 * 1024 * 1024 });
+  const browser = stdout.split("\n").find((line) => line.includes(`--user-data-dir=${profile}`) && !line.includes(" --type="));
+  const pid = browser?.trim().split(/\s+/, 1)[0];
+  if (!pid) throw new Error("Could not identify isolated Playwright Chromium for footprint sampling.");
+  const sampler = spawn("footprint", ["--pid", pid, "-t", "--sample", "0.2", "--sample-duration", "30", "--json", outputPath, "--noCategories"], { stdio: "ignore" });
+  const completion = new Promise<void>((resolve, reject) => {
+    sampler.once("error", reject);
+    sampler.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`macOS footprint exited with status ${code}.`)));
+  });
+  return { completion, pid };
 }
 async function select(selector: string) {
   const box = await page.locator(selector).boundingBox();
@@ -379,7 +397,10 @@ test.beforeEach(async ({}, info) => {
       test.skip(true, `${info.project.name} executable not installed`);
     }
   }
-  context = await chromium.launchPersistentContext("", {
+  browserProfile = info.title.includes("near-limit full-page capture")
+    ? resolve("test-results", `near-limit-profile-${process.pid}-${Date.now()}`)
+    : undefined;
+  context = await chromium.launchPersistentContext(browserProfile ?? "", {
     channel: executablePath ? undefined : "chromium",
     executablePath,
     headless: true,
@@ -406,6 +427,7 @@ test.beforeEach(async ({}, info) => {
 });
 test.afterEach(async () => {
   await context?.close();
+  browserProfile = undefined;
 });
 test("real action capture pixels, clipboard, PNG export, zoom and cleanup", async ({}, info) => {
   for (const zoom of [1, 1.25, 1.5]) {
@@ -1455,6 +1477,48 @@ test("full-page rejects oversized output before allocating a tall stitch canvas"
   await expect(page.locator("precision-error")).toHaveCount(1);
   await expect.poll(() => page.evaluate(() => scrollY)).toBe(originalY);
   await expect.poll(async () => (await browserCDP.send("Target.getTargets")).targetInfos.some((target) => target.url.startsWith(`chrome-extension://${id}/editor.html?id=`))).toBe(false);
+});
+
+test("near-limit full-page capture records de-duplicated browser memory footprint", async ({}, info) => {
+  test.skip(info.project.name !== "chromium" || process.platform !== "darwin", "Uses macOS footprint with bundled Chromium only");
+  await page.goto("http://localhost:4173/full-page-edge.html");
+  await page.locator("main").evaluate((main) => { (main as HTMLElement).style.height = "8100px"; });
+  const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentHeight: document.documentElement.scrollHeight }));
+  const startedAt = Date.now();
+  const footprintPath = info.outputPath("near-limit-footprint.json");
+  const sampler = await startMacFootprintSampler(footprintPath);
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  let image: PNG;
+  let captureAndExportMs: number;
+  try {
+    await activate("fullPage", false);
+    await expect.poll(async () => {
+      editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+      return !!editor || await page.locator("precision-error").count() > 0;
+    }, { timeout: 45_000, intervals: [100, 250, 500] }).toBe(true);
+    await expect(page.locator("precision-error")).toHaveCount(0);
+    await editor!.bringToFront();
+    image = await exportComposition(editor!, info.outputPath("near-limit-full-page.png"));
+    captureAndExportMs = Date.now() - startedAt;
+  } finally {
+    await sampler.completion;
+  }
+  const footprint = JSON.parse(await readFile(footprintPath, "utf8")) as { samples?: Array<{ "total footprint"?: number }> };
+  const sampledBytes = (footprint.samples ?? []).map((sample) => sample["total footprint"] ?? 0);
+  expect(sampledBytes.length).toBeGreaterThan(0);
+  const pngBytes = (await readFile(info.outputPath("near-limit-full-page.png"))).byteLength;
+  const megapixels = image!.width * image!.height / 1_000_000;
+  expect(megapixels).toBeGreaterThan(38);
+  expect(megapixels).toBeLessThanOrEqual(40);
+  expect(image!.width).toBeGreaterThan(0);
+  expect(image!.height).toBeGreaterThan(0);
+  console.log("Near-limit full-page measurement", {
+    viewport, pngWidth: image!.width, pngHeight: image!.height, megapixels: Number(megapixels.toFixed(2)),
+    decodedRgbaBytes: image!.data.byteLength, pngBytes, browserRootPid: sampler.pid,
+    footprintScope: "macOS de-duplicated footprint for Playwright Chromium and descendants",
+    peakFootprintMiB: Number((Math.max(...sampledBytes) / (1024 * 1024)).toFixed(1)),
+    footprintSamples: sampledBytes.length, captureAndExportMs,
+  });
 });
 
 test("full-page capture handles a document shorter than its viewport", async ({}, info) => {
