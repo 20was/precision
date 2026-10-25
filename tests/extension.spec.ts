@@ -47,42 +47,50 @@ async function activate(mode: "element" | "visible" | "fullPage" | "compose" = "
     targetId: popupId,
     flatten: false,
   });
-  const popupClick = new Promise<unknown>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      browserCDP.off("Target.receivedMessageFromTarget", onResponse);
-      reject(new Error("The extension popup did not acknowledge its capture action."));
-    }, 5_000);
-    const onResponse = (event: { sessionId: string; message: string }) => {
-      if (event.sessionId !== sessionId) return;
-      let result: { id?: number; result?: { result?: { value?: unknown }; exceptionDetails?: { text?: string } } };
-      try { result = JSON.parse(event.message); } catch { return; }
-      if (result.id !== 1) return;
-      clearTimeout(timeout);
-      browserCDP.off("Target.receivedMessageFromTarget", onResponse);
-      if (result.result?.exceptionDetails)
-        reject(new Error(result.result.exceptionDetails.text ?? "The popup action failed."));
-      else resolve(result.result?.result?.value);
-    };
-    browserCDP.on("Target.receivedMessageFromTarget", onResponse);
-    void browserCDP.send("Target.sendMessageToTarget", {
-      sessionId,
-      message: JSON.stringify({
-        id: 1,
-        method: "Runtime.evaluate",
-        params: {
-          expression: `(async()=>{if(document.readyState==='loading')await new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));const button=document.querySelector('[data-mode='+${JSON.stringify(mode)}+']');if(!button)throw new Error('Capture mode button is missing');button.click();return button.dataset.mode})()`,
-          awaitPromise: true,
-          userGesture: true,
-        },
-      }),
-    }).catch((error) => {
-      clearTimeout(timeout);
-      browserCDP.off("Target.receivedMessageFromTarget", onResponse);
-      reject(error);
+  let commandId = 0;
+  const sendPopupCommand = (method: string, params: Record<string, unknown>) => {
+    const id = ++commandId;
+    return new Promise<{ result?: { value?: unknown; objectId?: string } }>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        browserCDP.off("Target.receivedMessageFromTarget", onResponse);
+        reject(new Error("The extension popup did not acknowledge its capture action."));
+      }, 5_000);
+      const onResponse = (event: { sessionId: string; message: string }) => {
+        if (event.sessionId !== sessionId) return;
+        let response: { id?: number; result?: { result?: { value?: unknown; objectId?: string }; exceptionDetails?: { text?: string } }; error?: { message?: string } };
+        try { response = JSON.parse(event.message); } catch { return; }
+        if (response.id !== id) return;
+        clearTimeout(timeout);
+        browserCDP.off("Target.receivedMessageFromTarget", onResponse);
+        if (response.error || response.result?.exceptionDetails)
+          reject(new Error(response.error?.message ?? response.result?.exceptionDetails?.text ?? "The popup action failed."));
+        else resolve(response.result);
+      };
+      browserCDP.on("Target.receivedMessageFromTarget", onResponse);
+      void browserCDP.send("Target.sendMessageToTarget", {
+        sessionId,
+        message: JSON.stringify({ id, method, params }),
+      }).catch((error) => {
+        clearTimeout(timeout);
+        browserCDP.off("Target.receivedMessageFromTarget", onResponse);
+        reject(error);
+      });
     });
-  });
-  await popupClick;
-  await browserCDP.send("Target.detachFromTarget", { sessionId }).catch(() => {});
+  };
+  try {
+    const documentResponse = await sendPopupCommand("Runtime.evaluate", { expression: "document" });
+    const objectId = documentResponse.result?.objectId;
+    if (!objectId) throw new Error("The extension popup document is unavailable.");
+    await sendPopupCommand("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: "async function(mode){if(this.readyState==='loading')await new Promise(resolve=>this.addEventListener('DOMContentLoaded',resolve,{once:true}));const button=Array.from(this.querySelectorAll('button[data-mode]')).find(candidate=>candidate.dataset.mode===mode);if(!button)throw new Error('Capture mode button is missing');button.click();return button.dataset.mode}",
+      arguments: [{ value: mode }],
+      awaitPromise: true,
+      userGesture: true,
+    });
+  } finally {
+    await browserCDP.send("Target.detachFromTarget", { sessionId }).catch(() => {});
+  }
   if (mode === "visible" || mode === "fullPage") {
     if (mode === "fullPage") {
       if (!waitForResult) {
