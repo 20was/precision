@@ -25,7 +25,7 @@ const paths: Record<string, string> = {
   chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   brave: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 };
-async function activate(mode: "element" | "region" | "visible" | "fullPage" | "compose" = "element", waitForResult = true) {
+async function activate(mode: "element" | "region" | "visible" | "fullPage" | "compose" = "element", waitForResult = true, waitForPopupStatus?: string) {
   await page.bringToFront();
   const targets = await browserCDP.send("Target.getTargets", {
     filter: [{ type: "tab" }],
@@ -92,9 +92,24 @@ async function activate(mode: "element" | "region" | "visible" | "fullPage" | "c
       awaitPromise: true,
       userGesture: true,
     });
+    if (waitForPopupStatus) {
+      await expect.poll(async () => {
+        const result = await sendPopupCommand("Runtime.evaluate", {
+          expression: "document.querySelector('#status')?.textContent ?? ''",
+        });
+        return result.result?.value ?? "";
+      }, { timeout: 20_000, intervals: [200, 500] }).toContain(waitForPopupStatus);
+      await expect.poll(async () => {
+        const result = await sendPopupCommand("Runtime.evaluate", {
+          expression: "document.querySelector('button[data-mode=fullPage]')?.disabled === false",
+        });
+        return result.result?.value;
+      }).toBe(true);
+    }
   } finally {
     await browserCDP.send("Target.detachFromTarget", { sessionId }).catch(() => {});
   }
+  if (waitForPopupStatus) return;
   if (mode === "visible" || mode === "fullPage") {
     if (mode === "fullPage") {
       if (!waitForResult) {
@@ -1467,6 +1482,17 @@ test("full-page capture stitches sticky-header bands and restores the page", asy
   const closed = editor!.waitForEvent("close");
   const close = clickShadowButton("Close editor", editor!).catch(() => undefined);
   await Promise.all([closed, close]);
+});
+
+test("full-page startup timeout restores popup controls when the browser tab lookup stalls", async () => {
+  await worker.evaluate(() => {
+    Object.defineProperty(chrome.tabs, "get", {
+      configurable: true,
+      value: () => new Promise(() => {}),
+    });
+  });
+  await activate("fullPage", true, "Precision could not start capture on this page.");
+  await expect(page.locator("precision-full-page-progress")).toHaveCount(0);
 });
 
 test("full-page capture settles a lazy image and documents fixed/nested content", async ({}, info) => {
