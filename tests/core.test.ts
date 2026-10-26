@@ -5,6 +5,34 @@ import { transition } from "../src/shared/session";
 import { isSupportedPageUrl } from "../src/shared/page-url";
 import { canvasToClientPoint, clientToCanvasPoint, resizedAspectWidth } from "../src/shared/editor-geometry";
 import { bounds, parentTarget, childTarget, targetAt } from "../src/target";
+import { captureWithTransientRetry } from "../src/shared/capture-retry";
+describe("transient viewport screenshot recovery", () => {
+  it("retries Chromium's internal screenshot error once after checking the tab", async () => {
+    const capture = vi.fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error("Internal error."))
+      .mockResolvedValueOnce("image/png");
+    const beforeRetry = vi.fn().mockResolvedValue(undefined);
+    const wait = vi.fn().mockResolvedValue(undefined);
+    await expect(captureWithTransientRetry(capture, beforeRetry, wait)).resolves.toBe("image/png");
+    expect(capture).toHaveBeenCalledTimes(2);
+    expect(beforeRetry).toHaveBeenCalledOnce();
+    expect(wait).toHaveBeenCalledWith(650);
+  });
+  it("does not retry permanent or permission errors", async () => {
+    const capture = vi.fn<() => Promise<string>>().mockRejectedValue(new Error("Permission denied."));
+    const beforeRetry = vi.fn();
+    await expect(captureWithTransientRetry(capture, beforeRetry)).rejects.toThrow("Permission denied.");
+    expect(capture).toHaveBeenCalledOnce();
+    expect(beforeRetry).not.toHaveBeenCalled();
+  });
+  it("returns actionable guidance when the browser fails again", async () => {
+    const capture = vi.fn<() => Promise<string>>().mockRejectedValue(new Error("Internal error."));
+    await expect(captureWithTransientRetry(capture, async () => {}, async () => {})).rejects.toThrow(
+      "Your browser could not capture this page after retry.",
+    );
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
+});
 const viewport = { width: 800, height: 600, scrollX: 0, scrollY: 0 };
 describe("geometry", () => {
   it("normalizes custom region drags in either direction", () => {

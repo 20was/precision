@@ -8,6 +8,7 @@ import {
 import { transition, type Phase } from "./shared/session";
 import { isSupportedPageUrl } from "./shared/page-url";
 import { deleteHandoff, saveHandoffChunk, saveHandoffMeta } from "./shared/handoff";
+import { captureWithTransientRetry } from "./shared/capture-retry";
 interface Session {
   id: string;
   tab: number;
@@ -100,7 +101,15 @@ async function captureVisibleViewport(tabId: number) {
     capturing = true;
     ownsCapture = true;
     lastCapture = Date.now();
-    const data = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    const data = await captureWithTransientRetry(
+      () => chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }),
+      async () => {
+        const retryTab = await chrome.tabs.get(tabId);
+        if (!retryTab.active || retryTab.windowId !== tab.windowId)
+          throw new Error("The active page changed during capture. Try again.");
+        lastCapture = Date.now();
+      },
+    );
     const current = await chrome.tabs.get(tabId);
     if (!current.active || current.windowId !== tab.windowId)
       throw new Error("The active page changed during capture. Try again.");
