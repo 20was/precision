@@ -1495,6 +1495,30 @@ test("full-page startup timeout restores popup controls when the browser tab loo
   await expect(page.locator("precision-full-page-progress")).toHaveCount(0);
 });
 
+test("popup restores capture controls when the background worker never responds", async () => {
+  const popup = await context.newPage();
+  try {
+    await popup.goto(`chrome-extension://${id}/popup.html`);
+    await popup.evaluate(() => {
+      const nativeSetTimeout = window.setTimeout.bind(window);
+      window.setTimeout = ((callback: TimerHandler) =>
+        nativeSetTimeout(callback, 25)) as typeof window.setTimeout;
+      Object.defineProperty(chrome.runtime, "sendMessage", {
+        configurable: true,
+        value: () => new Promise(() => {}),
+      });
+    });
+    const button = popup.locator('button[data-mode="visible"]');
+    await button.click();
+    await expect(popup.locator("#status")).toContainText(
+      "could not connect to its background worker",
+    );
+    await expect(button).toBeEnabled();
+  } finally {
+    await popup.close();
+  }
+});
+
 test("full-page capture settles a lazy image and documents fixed/nested content", async ({}, info) => {
   const startedAt = Date.now();
   await page.goto("http://localhost:4173/full-page-edge.html");
