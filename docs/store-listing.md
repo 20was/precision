@@ -1,6 +1,6 @@
 # Chrome Web Store listing draft
 
-This is draft copy for the local package, version 0.1.6. It does not change any package already submitted to the dashboard; update the store listing and privacy answers only when uploading this build.
+This is the store listing copy associated with the 0.1.8 release package. Review it against the live listing before submitting an update.
 
 ## Product name
 

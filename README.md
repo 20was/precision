@@ -105,4 +105,4 @@ Precision requests `activeTab`, `scripting`, and `clipboardWrite`. It processes 
 - [Repository security settings](docs/repository-security.md)
 - [MIT License](LICENSE)
 
-Precision is in early development. Contributions and issue reports are welcome; please include browser version, operating system, and a reproducible page or test case for capture bugs. No store listing or release has been published.
+Precision is available on the Chrome Web Store. Contributions and issue reports are welcome; please include browser version, operating system, and a reproducible page or test case for capture bugs.
