@@ -9,6 +9,7 @@ import { transition, type Phase } from "./shared/session";
 import { isSupportedPageUrl } from "./shared/page-url";
 import { deleteHandoff, saveHandoffChunk, saveHandoffMeta } from "./shared/handoff";
 import { captureWithTransientRetry } from "./shared/capture-retry";
+import { withTimeout } from "./shared/timeout";
 interface Session {
   id: string;
   tab: number;
@@ -44,39 +45,60 @@ async function active(s: Session) {
     );
 }
 async function begin(tabId: number, mode: "element" | "region" | "fullPage" | "compose") {
-  const tab = await chrome.tabs.get(tabId);
-  if (!tab.url || !isSupportedPageUrl(tab.url))
-    throw new Error(
-      "This page cannot be selected. Open a regular http or https webpage; browser pages, the Web Store and PDFs are unsupported.",
-    );
-  const old = sessions.get(tabId);
-  if (old) await stop(old);
-  const s: Session = {
-    id: crypto.randomUUID(),
-    tab: tabId,
-    window: tab.windowId,
-    phase: "selecting",
-    mode,
-    expires: Date.now() + (mode === "element" || mode === "region" ? 120_000 : 15 * 60_000),
-  };
-  sessions.set(tabId, s);
-  try {
+  let session: Session | undefined,
+    startupExpired = false;
+  const startup = async () => {
+    const tab = await chrome.tabs.get(tabId);
+    if (startupExpired)
+      throw new Error("Capture startup expired. Open Precision and try again.");
+    if (!tab.url || !isSupportedPageUrl(tab.url))
+      throw new Error(
+        "This page cannot be selected. Open a regular http or https webpage; browser pages, the Web Store and PDFs are unsupported.",
+      );
+    const old = sessions.get(tabId);
+    if (old) await stop(old);
+    if (startupExpired)
+      throw new Error("Capture startup expired. Open Precision and try again.");
+    const s: Session = {
+      id: crypto.randomUUID(),
+      tab: tabId,
+      window: tab.windowId,
+      phase: "selecting",
+      mode,
+      expires: Date.now() + (mode === "element" || mode === "region" ? 120_000 : 15 * 60_000),
+    };
+    session = s;
+    sessions.set(tabId, s);
     await active(s);
+    if (startupExpired || sessions.get(tabId) !== s)
+      throw new Error("Capture startup expired. Open Precision and try again.");
     const result = await chrome.scripting.executeScript({
       target: { tabId },
       files: ["content.js"],
     });
+    if (startupExpired || sessions.get(tabId) !== s)
+      throw new Error("Capture startup expired. Open Precision and try again.");
     s.document = result[0]?.documentId;
     await chrome.tabs.sendMessage(
       tabId,
       { type: "begin", session: s.id, mode },
       { documentId: s.document, frameId: 0 },
     );
+    if (startupExpired || sessions.get(tabId) !== s)
+      throw new Error("Capture startup expired. Open Precision and try again.");
     setTimeout(() => {
       if (sessions.get(tabId) === s) void stop(s);
     }, mode === "element" || mode === "region" ? 120_000 : 15 * 60_000);
+  };
+  try {
+    await withTimeout(
+      startup(),
+      15_000,
+      "Precision could not start capture on this page. Reload the page and try again.",
+    );
   } catch (error) {
-    await stop(s);
+    startupExpired = true;
+    if (session) void stop(session).catch(() => {});
     throw error;
   }
 }

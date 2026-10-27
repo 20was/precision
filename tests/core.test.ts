@@ -3,6 +3,7 @@ import { intersect, cropPixels, rectFromPoints, resizeRectFromCorner, validRect 
 import { isCapture } from "../src/shared/protocol";
 import { transition } from "../src/shared/session";
 import { isSupportedPageUrl } from "../src/shared/page-url";
+import { withTimeout } from "../src/shared/timeout";
 import { canvasToClientPoint, clientToCanvasPoint, resizedAspectWidth } from "../src/shared/editor-geometry";
 import { bounds, parentTarget, childTarget, targetAt } from "../src/target";
 import { captureWithTransientRetry } from "../src/shared/capture-retry";
@@ -34,6 +35,23 @@ describe("transient viewport screenshot recovery", () => {
   });
 });
 const viewport = { width: 800, height: 600, scrollX: 0, scrollY: 0 };
+describe("startup timeout", () => {
+  it("returns the operation result before the deadline", async () => {
+    await expect(withTimeout(Promise.resolve("started"), 100, "timed out")).resolves.toBe("started");
+  });
+
+  it("rejects when extension startup stops responding", async () => {
+    vi.useFakeTimers();
+    try {
+      const result = withTimeout(new Promise<never>(() => {}), 15000, "startup timed out");
+      const expectation = expect(result).rejects.toThrow("startup timed out");
+      await vi.advanceTimersByTimeAsync(15000);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 describe("geometry", () => {
   it("normalizes custom region drags in either direction", () => {
     expect(rectFromPoints({ x: 120.5, y: 90.25 }, { x: 20.25, y: 10.5 })).toEqual({

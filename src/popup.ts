@@ -1,4 +1,5 @@
 import type { Result, StartMode } from "./shared/protocol";
+import { withTimeout } from "./shared/timeout";
 const buttons = Array.from(
   document.querySelectorAll<HTMLButtonElement>("[data-mode]"),
 );
@@ -9,17 +10,22 @@ for (const button of buttons) button.addEventListener("click", () => {
     const mode = button.dataset.mode as StartMode;
     status.textContent = mode === "fullPage" ? "Preparing full-page capture…" : mode === "compose" ? "Starting composition…" : mode === "visible" ? "Capturing visible area…" : mode === "region" ? "Preparing area selection…" : "Starting selection…";
     try {
-      const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
+      const [tab] = await withTimeout(
+        chrome.tabs.query({ active: true, currentWindow: true }),
+        4_000,
+        "Precision could not reach the active tab. Reload the extension in brave://extensions or chrome://extensions, then try again.",
+      );
       if (tab?.id === undefined)
         throw new Error("Open a webpage and try again.");
-      const result = (await chrome.runtime.sendMessage({
-        type: "start",
-        tab: tab.id,
-        mode,
-      })) as Result;
+      const result = (await withTimeout(
+        chrome.runtime.sendMessage({
+          type: "start",
+          tab: tab.id,
+          mode,
+        }),
+        20_000,
+        "Precision could not connect to its background worker. Reload the extension in brave://extensions or chrome://extensions, then try again.",
+      )) as Result;
       if (!result?.ok)
         throw new Error(
           result && !result.ok
