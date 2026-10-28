@@ -306,7 +306,7 @@ async function setShadowInput(label: string, value: string, targetPage: Page) {
     const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: node!.backendNodeId });
     await cdp.send("Runtime.callFunctionOn", {
       objectId: object.objectId,
-      functionDeclaration: "function(value){this.value=value;this.dispatchEvent(new Event('input',{bubbles:true,composed:true}))}",
+      functionDeclaration: "function(value){this.value=value;this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true,composed:true}))}",
       arguments: [{ value }],
     });
   } finally { await cdp.detach(); }
@@ -346,6 +346,42 @@ async function shadowAttribute(label: string, attribute: string, targetPage: Pag
     const attrs = node!.attributes ?? [];
     const index = attrs.indexOf(attribute);
     return index < 0 ? null : attrs[index + 1] ?? null;
+  } finally { await cdp.detach(); }
+}
+async function focusShadowElement(label: string, targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      if (node.attributes?.includes(label)) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const result = find(child); if (result) return result; }
+    };
+    const node = find(root);
+    expect(node, `Shadow DOM element ${label}`).toBeTruthy();
+    const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: node!.backendNodeId });
+    await cdp.send("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function(){this.focus({preventScroll:true})}" });
+  } finally { await cdp.detach(); }
+}
+async function shadowPreviewFrameMetrics(targetPage: Page) {
+  const cdp = await context.newCDPSession(targetPage);
+  type Node = { backendNodeId: number; nodeName?: string; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    const find = (node: Node): Node | undefined => {
+      const classes = node.attributes?.[node.attributes.indexOf("class") + 1] ?? "";
+      if (classes.split(/\s+/).includes("frame-titlebar")) return node;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const result = find(child); if (result) return result; }
+    };
+    const node = find(root);
+    expect(node, "Mac frame titlebar in preview shadow DOM").toBeTruthy();
+    const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: node!.backendNodeId });
+    const result = await cdp.send("Runtime.callFunctionOn", {
+      objectId: object.objectId,
+    functionDeclaration: "function(){const root=this.getRootNode(),bar=this,dots=root.querySelector('.frame-dots'),url=root.querySelector('.frame-url'),time=root.querySelector('.capture-time'),controls=root.querySelector('.frame-window-controls'),canvas=root.querySelector('canvas'),wrap=root.querySelector('.canvas-wrap'),surface=root.querySelector('.frame-surface'),panel=root.querySelector('.panel'),head=panel.querySelector('.head'),actions=root.querySelector('.actions'),view=root.querySelector('.image-viewport'),r=el=>el.getBoundingClientRect(),cr=r(controls),ur=r(url),tr=r(time),br=r(bar),ar=r(actions),vr=r(view),wr=r(wrap),sr=r(surface),c=r(canvas),bottomInset=parseFloat(getComputedStyle(canvas).marginBottom)||0,stacked=bar.dataset.stacked==='true',timeControlsSeparated=tr.right<=cr.left+1||cr.right<=tr.left+1||tr.bottom<=cr.top+1||cr.bottom<=tr.top+1,urlTimeSeparated=ur.right<=tr.left+1||tr.right<=ur.left+1||ur.bottom<=tr.top+1||tr.bottom<=ur.top+1;return {visible:getComputedStyle(bar).display==='grid',stacked,macDotsVisible:getComputedStyle(dots).display!=='none'&&r(dots).width>0,macDotSize:r(dots.firstElementChild).width,actionsInHeader:ar.top>=r(head).top&&ar.bottom<=r(head).bottom,footerAbsent:!panel.querySelector('.footer'),headerFits:head.scrollWidth<=head.clientWidth+1,centeredX:Math.abs((br.left+br.right-vr.left-vr.right)/2)<1,centeredY:Math.abs((br.top+c.bottom+bottomInset-vr.top-vr.bottom)/2)<1,centerAnchorX:(vr.left+view.clientWidth/2-br.left)/br.width,centerAnchorY:(vr.top+view.clientHeight/2-br.top)/br.width,viewBounds:{x:vr.left,y:vr.top,width:vr.width,height:vr.height,scrollLeft:view.scrollLeft,scrollTop:view.scrollTop},urlAndTimeShareRow:Math.abs((ur.top+ur.bottom-tr.top-tr.bottom)/2)<1,metadataRowsSeparated:ur.bottom<=tr.top+1,timestampFits:time.scrollWidth<=time.clientWidth+1&&tr.right<=br.right,timeControlsSeparated:bar.dataset.style!=='windows'||timeControlsSeparated,urlTimeSeparated,urlCentered:Math.abs((ur.left+ur.right-br.left-br.right)/2)<1,urlFieldVisible:getComputedStyle(url).display!=='none'&&!url.hidden,urlText:url.textContent,timeVisible:getComputedStyle(time).display!=='none',urlPressed:root.querySelector('[aria-label=\"Show page URL in screenshot frame\"]').getAttribute('aria-pressed')==='true',offControlsHidden:bar.dataset.style!=='none'||getComputedStyle(controls).display==='none',urlDisabled:root.querySelector('[aria-label=\"Show page URL in screenshot frame\"]').disabled,frameBackground:getComputedStyle(surface).backgroundColor,frameOutline:getComputedStyle(surface).outlineColor,frameSurfaceWidth:sr.width,windowsControlsRight:getComputedStyle(controls).display!=='none'&&cr.right>br.left+br.width*.6&&cr.right<=br.right,barWidth:br.width,barHeight:br.height,canvasWidth:c.width,headHeight:r(head).height,footerHeight:0,urlFont:getComputedStyle(url).fontFamily,timeFont:getComputedStyle(time).fontFamily,timeText:time.textContent}}",
+      returnByValue: true,
+    });
+    return result.result.value as { visible: boolean; stacked: boolean; macDotsVisible: boolean; macDotSize: number; actionsInHeader: boolean; footerAbsent: boolean; headerFits: boolean; centeredX: boolean; centeredY: boolean; centerAnchorX: number; centerAnchorY: number; viewBounds: { x: number; y: number; width: number; height: number; scrollLeft: number; scrollTop: number }; urlAndTimeShareRow: boolean; metadataRowsSeparated: boolean; timestampFits: boolean; timeControlsSeparated: boolean; urlTimeSeparated: boolean; urlCentered: boolean; urlFieldVisible: boolean; urlText: string; timeVisible: boolean; offControlsHidden: boolean; urlDisabled: boolean; urlPressed: boolean; frameBackground: string; frameOutline: string; frameSurfaceWidth: number; windowsControlsRight: boolean; barWidth: number; barHeight: number; canvasWidth: number; headHeight: number; footerHeight: number; urlFont: string; timeFont: string; timeText: string };
   } finally { await cdp.detach(); }
 }
 async function shadowControlIsFocused(label: string, targetPage: Page) {
@@ -576,6 +612,123 @@ test("real action capture pixels, clipboard, PNG export, zoom and cleanup", asyn
   await page.bringToFront();
   await page.locator("#action").click();
   expect(await page.locator("#count").textContent()).toBe("1");
+});
+
+test("Mac frame preview keeps the window chrome and metadata in one export-sized titlebar", async ({}, info) => {
+  await page.locator("#solid").evaluate((el) => {
+    (el as HTMLElement).style.cssText = "position:fixed;left:40px;top:140px;width:360px;height:220px;background:rgb(32,128,192);z-index:5";
+  });
+  await activate("region");
+  const box = await page.locator("#solid").boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + 10, box!.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 120, box!.y + 100, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => shadowAttribute("Preview selected region", "disabled", page)).toBeNull();
+  await clickShadowButton("Preview selected region");
+  await expect(page.locator("precision-preview")).toHaveCount(1);
+  await clickShadowButton("Choose screenshot window frame");
+  await clickShadowButton("Frame: Mac");
+  await clickShadowButton("Show capture date and time in screenshot");
+  const preview = await shadowPreviewFrameMetrics(page);
+  expect(preview.visible).toBe(true);
+  expect(preview.stacked).toBe(true);
+  expect(preview.macDotsVisible).toBe(true);
+  expect(preview.macDotSize).toBeGreaterThanOrEqual(15);
+  expect(preview.metadataRowsSeparated).toBe(true);
+  expect(preview.timestampFits).toBe(true);
+  expect(preview.timeText).toContain("GMT");
+  expect(preview.barWidth).toBeGreaterThan(preview.canvasWidth);
+  expect(preview.barWidth - preview.canvasWidth).toBeLessThan(80);
+  expect(preview.urlFont).toBe(preview.timeFont);
+  expect(preview.headHeight).toBeLessThanOrEqual(50);
+  expect(preview.footerHeight).toBeLessThanOrEqual(52);
+  expect(preview.actionsInHeader).toBe(true);
+  expect(preview.footerAbsent).toBe(true);
+  expect(preview.centeredX).toBe(true);
+  expect(preview.centeredY).toBe(true);
+  await page.setViewportSize({ width: 390, height: 700 });
+  expect((await shadowPreviewFrameMetrics(page)).headerFits).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  if (info.project.name === "chromium") await page.screenshot({ path: info.outputPath("mac-frame-preview-aligned.png") });
+  await clickShadowButton("Screenshot frame: Mac");
+  await clickShadowButton("Frame: Windows");
+  const windowsPreview = await shadowPreviewFrameMetrics(page);
+  expect(windowsPreview.windowsControlsRight).toBe(true);
+  expect(windowsPreview.timeControlsSeparated).toBe(true);
+  await clickShadowButton("Close editor");
+});
+test("wide screenshot frame preview keeps URL and timestamp readable on one row", async ({}, info) => {
+  await activate("visible");
+  await expect.poll(() => context.pages().some((candidate) => candidate.url().includes("/editor.html?id="))).toBe(true);
+  const editor = context.pages().find((candidate) => candidate.url().includes("/editor.html?id="));
+  expect(editor).toBeTruthy();
+  await expect(editor!.locator("precision-preview")).toHaveCount(1);
+  await clickShadowButton("Show capture date and time in screenshot", editor!);
+  const noFramePreview = await shadowPreviewFrameMetrics(editor!);
+  expect(noFramePreview.visible).toBe(true);
+  expect(noFramePreview.offControlsHidden).toBe(true);
+  expect(noFramePreview.urlDisabled).toBe(true);
+  await clickShadowButton("Show capture date and time in screenshot", editor!);
+  await clickShadowButton("Choose screenshot window frame", editor!);
+  await clickShadowButton("Frame: Mac", editor!);
+  await clickShadowButton("Show capture date and time in screenshot", editor!);
+  const preview = await shadowPreviewFrameMetrics(editor!);
+  expect(preview.stacked).toBe(false);
+  expect(preview.macDotsVisible).toBe(true);
+  expect(preview.urlAndTimeShareRow).toBe(true);
+  expect(preview.timestampFits).toBe(true);
+  expect(preview.urlCentered).toBe(true);
+  expect(preview.urlPressed).toBe(true);
+  await clickShadowButton("Show page URL in screenshot frame", editor!);
+  await expect.poll(async () => shadowAttribute("Show page URL in screenshot frame", "aria-pressed", editor!)).toBe("false");
+  const privateUrlPreview = await shadowPreviewFrameMetrics(editor!);
+  expect(privateUrlPreview.urlFieldVisible).toBe(true);
+  expect(privateUrlPreview.urlText).toBe("");
+  if (info.project.name === "chromium") await editor!.screenshot({ path: info.outputPath("mac-frame-private-url.png") });
+  await clickShadowButton("Show page URL in screenshot frame", editor!);
+  await clickShadowButton("Show capture date and time in screenshot", editor!);
+  const urlOnlyPreview = await shadowPreviewFrameMetrics(editor!);
+  expect(urlOnlyPreview.urlPressed).toBe(true);
+  expect(urlOnlyPreview.timeVisible).toBe(false);
+  if (info.project.name === "chromium") await editor!.screenshot({ path: info.outputPath("mac-frame-url-only.png") });
+  await clickShadowButton("Show capture date and time in screenshot", editor!);
+  expect(preview.urlTimeSeparated).toBe(true);
+  expect(preview.frameBackground).toBe("rgb(230, 232, 235)");
+  expect(preview.frameOutline).toBe("rgb(207, 210, 214)");
+  expect(Math.abs(preview.frameSurfaceWidth - preview.barWidth)).toBeLessThan(2);
+  expect(preview.timeText).toMatch(/GMT|UTC|[A-Z]{3}/);
+  if (info.project.name === "chromium") await editor!.screenshot({ path: info.outputPath("wide-frame-preview-aligned.png") });
+  await clickShadowButton("Choose screenshot window frame", editor!);
+  await clickShadowButton("Frame: Off", editor!);
+  const offWithUrlSaved = await shadowPreviewFrameMetrics(editor!);
+  expect(offWithUrlSaved.urlDisabled).toBe(true);
+  expect(offWithUrlSaved.urlPressed).toBe(false);
+  await clickShadowButton("Choose screenshot window frame", editor!);
+  await clickShadowButton("Frame: Windows", editor!);
+  const windowsPreview = await shadowPreviewFrameMetrics(editor!);
+  expect(windowsPreview.stacked).toBe(false);
+  expect(windowsPreview.windowsControlsRight).toBe(true);
+  expect(windowsPreview.timeControlsSeparated).toBe(true);
+  expect(windowsPreview.urlPressed).toBe(true);
+  const centerBefore = await shadowPreviewFrameMetrics(editor!);
+  await clickShadowButton("Zoom in (+)", editor!);
+  const centerAfter = await shadowPreviewFrameMetrics(editor!);
+  expect(Math.abs(centerAfter.centerAnchorX - centerBefore.centerAnchorX)).toBeLessThan(0.01);
+  expect(Math.abs(centerAfter.centerAnchorY - centerBefore.centerAnchorY)).toBeLessThan(0.01);
+  await focusShadowElement("Screenshot canvas. Hold Space and drag to pan.", editor!);
+  const panStart = await shadowPreviewFrameMetrics(editor!);
+  await editor!.keyboard.down("Space");
+  const startX = panStart.viewBounds.x + panStart.viewBounds.width * 0.7;
+  const startY = panStart.viewBounds.y + panStart.viewBounds.height * 0.5;
+  await editor!.mouse.move(startX, startY);
+  await editor!.mouse.down();
+  await editor!.mouse.move(startX - 40, startY, { steps: 4 });
+  await editor!.mouse.up();
+  await editor!.keyboard.up("Space");
+  const panEnd = await shadowPreviewFrameMetrics(editor!);
+  expect(panEnd.viewBounds.scrollLeft).toBeGreaterThan(panStart.viewBounds.scrollLeft);
 });
 test("custom region corner handles resize the crop before same-page copy and preview", async ({}, info) => {
   await context.grantPermissions(["clipboard-read"]);
@@ -1082,6 +1235,13 @@ test("annotation geometry, history and export pixels stay stable across zoom", a
       }
     return count;
   };
+  const redBounds = (image: PNG, area: { x: number; y: number; width: number; height: number }) => {
+    let left = image.width, top = image.height, right = -1, bottom = -1;
+    for (let y = Math.max(0, Math.floor(area.y)); y < Math.min(image.height, Math.ceil(area.y + area.height)); y++)
+      for (let x = Math.max(0, Math.floor(area.x)); x < Math.min(image.width, Math.ceil(area.x + area.width)); x++)
+        if (redLike(pixel(image, x, y))) { left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y); }
+    return { left, top, right, bottom };
+  };
   const red: [number, number, number] = [229, 72, 77];
 
   // Pen: a continuous stroke is one undoable operation at a fitted ~50% view.
@@ -1144,6 +1304,41 @@ test("annotation geometry, history and export pixels stay stable across zoom", a
   current = await readShadowCanvas(label, editor!);
   expect(pixel(current, 160, 60)).toEqual([...red, 255]);
   expect(pixel(current, 140, 80)).toEqual([...red, 255]);
+  const originalRectangleBounds = redBounds(current, { x: 125, y: 45, width: 100, height: 100 });
+
+  // Selecting a box exposes four corner handles; resizing changes image-space geometry in one undo step.
+  await clickShadowButton("Select", editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const resizeCases = [
+    { corner: { x: 140, y: 60 }, destination: { x: 130, y: 50 }, left: true, top: true },
+    { corner: { x: 180, y: 60 }, destination: { x: 190, y: 50 }, right: true, top: true },
+    { corner: { x: 180, y: 100 }, destination: { x: 190, y: 110 }, right: true, bottom: true },
+    { corner: { x: 140, y: 100 }, destination: { x: 130, y: 110 }, left: true, bottom: true },
+  ];
+  let lastResizedBounds = originalRectangleBounds;
+  for (const resize of resizeCases) {
+    const selectRect = canvasClientPoint(metrics, 160, 80);
+    await editor!.mouse.click(selectRect.x, selectRect.y);
+    const start = canvasClientPoint(metrics, resize.corner.x, resize.corner.y);
+    const end = canvasClientPoint(metrics, resize.destination.x, resize.destination.y);
+    await editor!.mouse.move(start.x, start.y);
+    await editor!.mouse.down();
+    await editor!.mouse.move(end.x, end.y, { steps: 4 });
+    await editor!.mouse.up();
+    current = await readShadowCanvas(label, editor!);
+    lastResizedBounds = redBounds(current, { x: 125, y: 45, width: 100, height: 100 });
+    if (resize.left) expect(lastResizedBounds.left).toBeLessThan(originalRectangleBounds.left - 5);
+    if (resize.right) expect(lastResizedBounds.right).toBeGreaterThan(originalRectangleBounds.right + 5);
+    if (resize.top) expect(lastResizedBounds.top).toBeLessThan(originalRectangleBounds.top - 5);
+    if (resize.bottom) expect(lastResizedBounds.bottom).toBeGreaterThan(originalRectangleBounds.bottom + 5);
+    await editor!.keyboard.press("Control+z");
+    current = await readShadowCanvas(label, editor!);
+    expect(redBounds(current, { x: 125, y: 45, width: 100, height: 100 })).toEqual(originalRectangleBounds);
+  }
+  await editor!.keyboard.press("Control+Shift+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(redBounds(current, { x: 125, y: 45, width: 100, height: 100 })).toEqual(lastResizedBounds);
+  await editor!.keyboard.press("Control+z");
 
   // At the largest supported editor zoom, pointer geometry remains in image pixels.
   await clickShadowButton("Zoom in (+)", editor!);
@@ -1207,10 +1402,35 @@ test("annotation geometry, history and export pixels stay stable across zoom", a
   expect(countGreen(current, { x: 298, y: 17, width: 190, height: 30 })).toBeGreaterThan(0);
   await editor!.keyboard.press("Control+z");
   current = await readShadowCanvas(label, editor!);
-  expect(countRed(current, { x: 298, y: 17, width: 150, height: 30 })).toBeGreaterThan(0);
+  expect(countGreen(current, { x: 298, y: 17, width: 150, height: 30 })).toBeGreaterThan(0);
   await editor!.keyboard.press("Control+Shift+z");
   current = await readShadowCanvas(label, editor!);
   expect(countGreen(current, { x: 298, y: 17, width: 190, height: 30 })).toBeGreaterThan(0);
+
+  // Recolor the selected existing text as one undoable operation.
+  await clickShadowButton("Select", editor!);
+  await centerCanvasPointInViewport(label, 350, 25, editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const recolorPoint = canvasClientPoint(metrics, 350, 25);
+  await editor!.mouse.click(recolorPoint.x, recolorPoint.y);
+  await setShadowInput("Annotation color", "#2255ee", editor!);
+  await editor!.keyboard.press("Enter");
+  current = await readShadowCanvas(label, editor!);
+  const countBlue = (image: PNG) => {
+    let count = 0;
+    for (let y = 15; y < 48; y++) for (let x = 290; x < 520; x++) {
+      const [r, g, b] = pixel(image, x, y);
+      if (b! > r! * 1.35 && b! > g! * 1.15) count++;
+    }
+    return count;
+  };
+  expect(countBlue(current)).toBeGreaterThan(0);
+  await editor!.keyboard.press("Control+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(countGreen(current, { x: 298, y: 17, width: 190, height: 30 })).toBeGreaterThan(0);
+  await editor!.keyboard.press("Control+Shift+z");
+  current = await readShadowCanvas(label, editor!);
+  expect(countBlue(current)).toBeGreaterThan(0);
 
   await centerCanvasPointInViewport(label, 310, 25, editor!);
   metrics = await shadowCanvasMetrics(label, editor!);
@@ -1220,8 +1440,7 @@ test("annotation geometry, history and export pixels stay stable across zoom", a
   await editor!.mouse.move(textTo.x, textTo.y, { steps: 3 });
   await editor!.mouse.up();
   current = await readShadowCanvas(label, editor!);
-  expect(countGreen(current, { x: 298, y: 17, width: 40, height: 30 })).toBe(0);
-  expect(countGreen(current, { x: 338, y: 17, width: 130, height: 30 })).toBeGreaterThan(0);
+  expect(countBlue(current)).toBeGreaterThan(0);
   await editor!.keyboard.press("Control+z");
   await editor!.keyboard.press("Control+Shift+z");
 
@@ -1379,6 +1598,20 @@ test("overlapping composition uses topmost hits and chronological history", asyn
   await editor!.mouse.move(to.x, to.y, { steps: 4 });
   await editor!.mouse.up();
   expect(await shadowAttribute("Select div, element 1", "aria-pressed", editor!)).toBe("true");
+  await clickShadowButton("Select", editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  const deleteMarkPoint = at(168, 168);
+  await editor!.mouse.click(deleteMarkPoint.x, deleteMarkPoint.y);
+  await editor!.keyboard.press("Backspace");
+  await expect.poll(() => shadowHostText("precision-composition", editor!)).toContain("Annotation removed");
+  image = await exportComposition(editor!, info.outputPath("overlap-annotation-backspace.png"));
+  expect([...image.data.subarray((155 * image.width + 168) * 4, (155 * image.width + 168) * 4 + 4)]).toEqual([24, 80, 220, 255]);
+  await expect.poll(() => shadowHostText("precision-composition", editor!)).toContain("Elements · 2");
+  await editor!.keyboard.press("Control+z");
+  image = await exportComposition(editor!, info.outputPath("overlap-annotation-backspace-undo.png"));
+  offset = (155 * image.width + 168) * 4;
+  expect(image.data[offset]).toBeGreaterThan(180);
+  await clickShadowButton("Select div, element 2", editor!);
   await clickShadowButton("Remove", editor!);
   image = await exportComposition(editor!, info.outputPath("overlap-after-remove.png"));
   offset = (155 * image.width + 168) * 4;
@@ -1396,6 +1629,76 @@ test("overlapping composition uses topmost hits and chronological history", asyn
   image = await exportComposition(editor!, info.outputPath("overlap-annotation-redo.png"));
   offset = (155 * image.width + 168) * 4;
   expect(image.data[offset]).toBeGreaterThan(180);
+  await clickShadowButton("Select div, element 2", editor!);
+  await editor!.keyboard.press("Delete");
+  await expect.poll(() => shadowHostText("precision-composition", editor!)).toContain("Elements · 1");
+  await editor!.keyboard.press("Control+z");
+  await expect.poll(() => shadowHostText("precision-composition", editor!)).toContain("Elements · 2");
+  const closed = editor!.waitForEvent("close");
+  const escape = editor!.keyboard.press("Escape").catch(() => undefined);
+  await Promise.all([closed, escape]);
+});
+
+test("solid redaction and native window frame are preserved in the exported PNG", async ({}, info) => {
+  await page.locator("#solid").evaluate((el) => {
+    (el as HTMLElement).style.cssText = "position:fixed;left:40px;top:140px;width:240px;height:160px;background:repeating-linear-gradient(90deg,rgb(32,128,192) 0 2px,white 2px 4px);z-index:5";
+  });
+  await activate("compose");
+  const target = await page.locator("#solid").boundingBox();
+  expect(target).not.toBeNull();
+  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2);
+  await clickShadowButton("Add selected element to composition");
+  await clickShadowButton("Compose 1 captured element");
+  let editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+  await expect.poll(() => {
+    editor = context.pages().find((candidate) => candidate.url().includes("editor.html?id="));
+    return !!editor;
+  }).toBe(true);
+  await editor!.bringToFront();
+  await expect(editor!.locator("precision-composition")).toHaveCount(1);
+  const label = "Editable composition with 1 elements";
+  await clickShadowButton("Mask", editor!);
+  await setShadowInput("Annotation color", "#3344dd", editor!);
+  await centerCanvasPointInViewport(label, 70, 65, editor!);
+  let metrics = await shadowCanvasMetrics(label, editor!);
+  let start = canvasClientPoint(metrics, 60, 58), end = canvasClientPoint(metrics, 110, 88);
+  await editor!.mouse.move(start.x, start.y);
+  await editor!.mouse.down();
+  await editor!.mouse.move(end.x, end.y, { steps: 3 });
+  await editor!.mouse.up();
+  const unblurred = await readShadowCanvas(label, editor!);
+  const baselineOffset = (70 * unblurred.width + 200) * 4;
+  const baselinePixel = [...unblurred.data.subarray(baselineOffset, baselineOffset + 3)];
+  await clickShadowButton("Blur", editor!);
+  await setShadowInput("Annotation color", "#22aa44", editor!);
+  await centerCanvasPointInViewport(label, 200, 70, editor!);
+  metrics = await shadowCanvasMetrics(label, editor!);
+  start = canvasClientPoint(metrics, 150, 58);
+  end = canvasClientPoint(metrics, 250, 88);
+  await editor!.mouse.move(start.x, start.y);
+  await editor!.mouse.down();
+  await editor!.mouse.move(end.x, end.y, { steps: 3 });
+  await editor!.mouse.up();
+  await clickShadowButton("Choose screenshot window frame", editor!);
+  await clickShadowButton("Frame: Mac", editor!);
+  await clickShadowButton("Show capture date and time in screenshot", editor!);
+  await expect.poll(async () => shadowAttribute("Show page URL in screenshot frame", "aria-pressed", editor!)).toBe("true");
+  await editor!.screenshot({ path: info.outputPath("window-frame-editor-review.png") });
+  const image = await exportComposition(editor!, info.outputPath("framed-masked-composition.png"));
+  expect(image.width).toBe(metrics.width + 32);
+  expect(image.height).toBe(metrics.height + 88);
+  const pixel = (x: number, y: number) => [...image.data.subarray((y * image.width + x) * 4, (y * image.width + x) * 4 + 4)];
+  let timeInk = 0;
+  for (let y = 16; y < 72; y++) for (let x = Math.max(0, image.width - 320); x < image.width - 20; x++) {
+    const [red, green, blue] = pixel(x, y);
+    if (red! < 130 && green! < 140 && blue! < 150) timeInk++;
+  }
+  expect(timeInk).toBeGreaterThan(40);
+  expect(pixel(16 + 75, 16 + 56 + 68)).toEqual([51, 68, 221, 255]);
+  expect(pixel(16 + 120, 16 + 56 + 100)).not.toEqual([51, 68, 221, 255]);
+  const blurredPixel = pixel(16 + 200, 16 + 56 + 70).slice(0, 3);
+  expect(blurredPixel.some((channel, index) => Math.abs(channel - baselinePixel[index]!) > 10)).toBe(true);
+  expect(blurredPixel[1]).toBeGreaterThan(blurredPixel[0]!);
   const closed = editor!.waitForEvent("close");
   const escape = editor!.keyboard.press("Escape").catch(() => undefined);
   await Promise.all([closed, escape]);
@@ -1428,6 +1731,28 @@ test("capture the visible viewport and open it in the screenshot editor", async 
   expect(Number(dimensions![2])).toBeGreaterThan(0);
   expect(Number(dimensions![2])).toBeLessThanOrEqual(viewport.height * viewport.dpr);
   expect(viewport.height * viewport.dpr - Number(dimensions![2])).toBeLessThanOrEqual(32);
+  const sourceWidth = Number(dimensions![1]), sourceHeight = Number(dimensions![2]);
+  await clickShadowButton("Choose screenshot window frame", editor!);
+  await clickShadowButton("Frame: Windows", editor!);
+  await expect.poll(async () => shadowAttribute("Show page URL in screenshot frame", "aria-pressed", editor!)).toBe("true");
+  const framedDownload = editor!.waitForEvent("download");
+  await clickShadowButton("Download PNG", editor!);
+  const framedFile = await framedDownload;
+  const framedPath = await framedFile.path();
+  expect(framedPath).toBeTruthy();
+  const framedPng = PNG.sync.read(await readFile(framedPath!));
+  const inset = Math.max(16, Math.round(Math.min(sourceWidth, sourceHeight) * 0.025));
+  const bar = Math.max(56, Math.min(112, Math.round(sourceWidth * 0.035)));
+  expect(framedPng.width).toBe(sourceWidth + inset * 2);
+  expect(framedPng.height).toBe(sourceHeight + inset + bar);
+  let urlInk = 0;
+  for (let y = inset + Math.floor(bar * 0.2); y < inset + Math.ceil(bar * 0.8); y++) {
+    for (let x = inset + 24; x < Math.min(framedPng.width - inset - 100, inset + 500); x++) {
+      const offset = (y * framedPng.width + x) * 4;
+      if (framedPng.data[offset]! < 130 && framedPng.data[offset + 1]! < 140 && framedPng.data[offset + 2]! < 150) urlInk++;
+    }
+  }
+  expect(urlInk).toBeGreaterThan(40);
   const closed = editor!.waitForEvent("close");
   const close = clickShadowButton("Close editor", editor!).catch(() => undefined);
   await Promise.all([closed, close]);

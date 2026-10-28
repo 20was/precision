@@ -10,6 +10,8 @@ export interface HandoffMeta {
   height: number;
   count: number;
   itemCount?: number;
+  sourceUrl?: string;
+  capturedAt?: number;
   created: number;
 }
 

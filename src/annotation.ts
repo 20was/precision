@@ -1,5 +1,5 @@
 export type AnnotationTool =
-  "select" | "pen" | "arrow" | "rectangle" | "text" | "spotlight";
+  "select" | "pen" | "arrow" | "rectangle" | "text" | "spotlight" | "blur" | "mask";
 type MarkTool = Exclude<AnnotationTool, "select">;
 type CanvasContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 import { clientToCanvasPoint } from "./shared/editor-geometry";
@@ -58,14 +58,20 @@ export function attachAnnotations(
   const toolButtons = new Map<AnnotationTool, HTMLButtonElement>();
   let tool: AnnotationTool = "select";
   let color = "#e5484d";
+  const toolColors: Partial<Record<MarkTool, string>> = {
+    blur: "#596273",
+    mask: "#202124",
+  };
+  let colorEditBefore: Mark[] | undefined;
   let draft: Mark | undefined;
   let bitmap: ImageBitmap | undefined;
+  const blurSurface = document.createElement("canvas");
   let disposed = false;
   let textEditor: HTMLInputElement | undefined;
   let editingMark: Mark | undefined;
   let selectedMark: Mark | undefined;
   let markDrag:
-    { mark: Mark; start: Point; origins: Point[]; moved: boolean } | undefined;
+    { mark: Mark; start: Point; origins: Point[]; moved: boolean; resizeCorner?: number; anchor?: Point } | undefined;
 
   const iconPaths: Record<string, string> = {
     Select: "M5 3l14 11-7 1-3 6L5 3Z",
@@ -75,6 +81,8 @@ export function attachAnnotations(
     Text: "M5 5h14M12 5v14",
     Spotlight:
       "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z",
+    Blur: "M4 4h16v16H4zM7 7h3v3H7zM14 7h3v3h-3zM7 14h3v3H7zM14 14h3v3h-3zM11 11h2v2h-2z",
+    Mask: "M4 4h16v16H4z",
     Undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-2",
     Redo: "m15 14 5-5-5-5m5 5H10a6 6 0 0 0 0 12h2",
     Clear: "M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3",
@@ -99,6 +107,8 @@ export function attachAnnotations(
   };
   const selectTool = (next: AnnotationTool) => {
     tool = next;
+    if (next !== "select") selectedMark = undefined;
+    colorInput.value = next === "mask" || next === "blur" ? toolColors[next]! : selectedMark?.color ?? color;
     options.onToolChange?.(tool);
     for (const [name, button] of toolButtons)
       button.setAttribute("aria-pressed", String(name === tool));
@@ -106,12 +116,12 @@ export function attachAnnotations(
       tool === "text" ? "text" : tool === "select" ? "default" : "crosshair";
     status.textContent =
       tool === "select"
-        ? "Click a mark to select it. Drag inside its outline to move; click text to edit. Choose a drawing tool to add marks."
+        ? "Select or move marks · Hold Space and drag to pan · Choose a tool to annotate."
         : tool === "text"
         ? "Text: click the image and type directly. Press Enter to place. Hold Alt/Option to add over a mark."
           : tool === "spotlight"
             ? "Spotlight: drag to keep an area bright and dim the rest. Hold Alt/Option to overlap marks."
-            : `${next === "pen" ? "Pen" : next === "arrow" ? "Arrow" : "Rectangle"}: drag on the image. Hold Alt/Option to draw over existing marks.`;
+      : `${next === "pen" ? "Pen" : next === "arrow" ? "Arrow" : next === "blur" ? "Blur" : next === "mask" ? "Solid mask (opaque redaction)" : "Rectangle"}: drag on the image. Hold Alt/Option to draw over existing marks.`;
   };
   for (const [name, label] of [
     ["select", "Select"],
@@ -120,6 +130,8 @@ export function attachAnnotations(
     ["rectangle", "Rectangle"],
     ["text", "Text"],
     ["spotlight", "Spotlight"],
+    ["blur", "Blur"],
+    ["mask", "Mask"],
   ] as const) {
     const button = makeButton(label, () => selectTool(name), name === tool);
     const shortcut: Record<AnnotationTool, string> = {
@@ -129,35 +141,49 @@ export function attachAnnotations(
       rectangle: "R",
       text: "T",
       spotlight: "S",
+      blur: "B",
+      mask: "M",
     };
     button.title = `${label} (${shortcut[name]})`;
     toolButtons.set(name, button);
     toolbar.append(button);
   }
-  selectTool(tool);
-
   const colorInput = document.createElement("input");
   colorInput.type = "color";
   colorInput.value = color;
   colorInput.setAttribute("aria-label", "Annotation color");
   colorInput.title = "Annotation color";
+  const cloneMarks = () => marks.map((mark) => ({
+    ...mark,
+    points: mark.points.map((point) => ({ ...point })),
+  }));
+  colorInput.addEventListener("focus", () => { colorEditBefore ??= cloneMarks(); });
   colorInput.addEventListener("input", () => {
+    colorEditBefore ??= cloneMarks();
     color = colorInput.value;
+    if (selectedMark && tool === "select") selectedMark.color = color;
+    else if (tool === "mask" || tool === "blur") toolColors[tool] = color;
     if (textEditor) {
       textEditor.style.color = color;
       textEditor.dataset.annotationColor = color;
     }
+    render();
+  });
+  colorInput.addEventListener("change", () => {
+    if (colorEditBefore) {
+      if (selectedMark && tool === "select") pushHistory(colorEditBefore);
+      colorEditBefore = undefined;
+      status.textContent = selectedMark && tool === "select" ? "Annotation color updated" : tool === "mask" ? "Mask color updated for new redactions" : tool === "blur" ? "Blur tint updated for new redactions" : "Annotation color updated for new marks";
+      render();
+    }
   });
   toolbar.append(colorInput);
+  selectTool(tool);
 
-  function pushHistory() {
+  function pushHistory(previous?: Mark[]) {
     history.splice(historyIndex + 1);
-    history.push(
-      marks.map((mark) => ({
-        ...mark,
-        points: mark.points.map((point) => ({ ...point })),
-      })),
-    );
+    if (previous) history[historyIndex] = previous;
+    history.push(cloneMarks());
     if (history.length > 101) history.shift();
     historyIndex = history.length - 1;
     options.onHistoryCommit?.();
@@ -243,12 +269,78 @@ export function attachAnnotations(
         last.y - head * Math.sin(angle + Math.PI / 6),
       );
       ctx.stroke();
+    } else if (mark.tool === "mask") {
+      ctx.fillStyle = mark.color;
+      ctx.fillRect(first.x, first.y, last.x - first.x, last.y - first.y);
+      ctx.strokeStyle = "rgba(255,255,255,.78)";
+      ctx.lineWidth = Math.max(1, canvas.width / 900);
+      ctx.strokeRect(first.x, first.y, last.x - first.x, last.y - first.y);
+    } else if (mark.tool === "blur") {
+      ctx.strokeRect(first.x, first.y, last.x - first.x, last.y - first.y);
     } else if (mark.text) {
       ctx.font = `600 ${textFontSize()}px -apple-system, BlinkMacSystemFont, sans-serif`;
       ctx.textBaseline = "top";
       ctx.fillText(mark.text, first.x, first.y, canvas.width - first.x);
     }
     ctx.restore();
+  };
+  const drawRedactions = (ctx: CanvasContext, source: Mark[]) => {
+    for (const mark of source) {
+      if (mark.tool === "mask") {
+        drawMark(ctx, mark);
+        continue;
+      }
+      if (mark.tool !== "blur") continue;
+      const first = mark.points[0], last = mark.points.at(-1);
+      if (!first || !last) continue;
+      const left = Math.max(0, Math.floor(Math.min(first.x, last.x)));
+      const top = Math.max(0, Math.floor(Math.min(first.y, last.y)));
+      const right = Math.min(canvas.width, Math.ceil(Math.max(first.x, last.x)));
+      const bottom = Math.min(canvas.height, Math.ceil(Math.max(first.y, last.y)));
+      const width = right - left, height = bottom - top;
+      if (width < 2 || height < 2) continue;
+      try {
+        const transform = ctx.getTransform();
+        const blurRadius = Math.max(6, canvas.width / 240);
+        const padding = blurRadius * 3;
+        const sourceLeft = Math.max(0, left - padding), sourceTop = Math.max(0, top - padding);
+        const sourceRight = Math.min(canvas.width, right + padding), sourceBottom = Math.min(canvas.height, bottom + padding);
+        const sourceWidth = sourceRight - sourceLeft, sourceHeight = sourceBottom - sourceTop;
+        const sampleScale = Math.min(1, Math.sqrt(1_048_576 / (sourceWidth * sourceHeight)));
+        const scratch = blurSurface;
+        const scratchWidth = Math.max(1, Math.ceil(sourceWidth * sampleScale));
+        const scratchHeight = Math.max(1, Math.ceil(sourceHeight * sampleScale));
+        if (scratch.width !== scratchWidth) scratch.width = scratchWidth;
+        if (scratch.height !== scratchHeight) scratch.height = scratchHeight;
+        const scratchContext = scratch.getContext("2d");
+        if (!scratchContext) continue;
+        scratchContext.clearRect(0, 0, scratch.width, scratch.height);
+        scratchContext.drawImage(
+          ctx.canvas as CanvasImageSource,
+          Math.round(sourceLeft * transform.a + sourceTop * transform.c + transform.e),
+          Math.round(sourceLeft * transform.b + sourceTop * transform.d + transform.f),
+          Math.ceil(sourceWidth),
+          Math.ceil(sourceHeight),
+          0,
+          0,
+          scratch.width,
+          scratch.height,
+        );
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(left, top, width, height);
+        ctx.clip();
+        ctx.filter = `blur(${blurRadius}px)`;
+        ctx.drawImage(scratch, sourceLeft, sourceTop, sourceWidth, sourceHeight);
+        ctx.filter = "none";
+        ctx.fillStyle = mark.color;
+        ctx.globalAlpha = 0.2;
+        ctx.fillRect(left, top, width, height);
+        ctx.restore();
+      } catch {
+        // The solid mask remains available if a browser cannot allocate a blur region.
+      }
+    }
   };
   const drawSpotlight = (ctx: CanvasContext, mark: Mark) => {
     if (!bitmap && !options.drawBase) return;
@@ -300,12 +392,43 @@ export function attachAnnotations(
     const bottom = Math.max(...ys) + pad;
     return { x: left, y: top, width: right - left, height: bottom - top };
   };
+  const resizable = (mark: Mark) => ["rectangle", "blur", "mask", "spotlight"].includes(mark.tool);
+  const boxCorners = (mark: Mark): Point[] => {
+    const xs = mark.points.map(({ x }) => x), ys = mark.points.map(({ y }) => y);
+    const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+    return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+  };
+  const resizeCornerAt = (point: Point, mark: Mark) => {
+    if (!resizable(mark)) return undefined;
+    const radius = Math.max(10, canvas.width / 220);
+    return boxCorners(mark).findIndex((corner) => Math.abs(point.x - corner.x) <= radius && Math.abs(point.y - corner.y) <= radius);
+  };
+  const drawResizeHandles = (ctx: CanvasContext, mark: Mark) => {
+    if (!resizable(mark)) return;
+    const size = Math.max(8, canvas.width / 250);
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.lineWidth = Math.max(1.5, canvas.width / 1000);
+    for (const corner of boxCorners(mark)) {
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#2878e8";
+      ctx.beginPath();
+      ctx.rect(corner.x - size / 2, corner.y - size / 2, size, size);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
   const markAt = (point: Point) => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return undefined;
     const displayedWidth = Math.max(1, canvas.getBoundingClientRect().width);
     const tolerance = Math.max(12, (10 * canvas.width) / displayedWidth);
-    for (const mark of [...marks].reverse()) {
+    const ordered = [
+      ...marks.filter((mark) => mark.tool === "blur" || mark.tool === "mask").reverse(),
+      ...marks.filter((mark) => mark.tool !== "blur" && mark.tool !== "mask").reverse(),
+    ];
+    for (const mark of ordered) {
       const bounds =
         mark.tool === "text" ? textBounds(ctx, mark) : markBounds(mark);
       if (
@@ -336,11 +459,13 @@ export function attachAnnotations(
       button.setAttribute("aria-pressed", String(mark === selectedMark));
       button.addEventListener("click", () => {
         selectedMark = mark;
+        color = mark.color;
+        colorInput.value = color;
         restoreObjectListFocus = true;
         selectTool("select");
         render();
         if (mark.tool === "text") startText(mark.points[0]!, undefined, mark);
-        else status.textContent = `${description} selected. Press Delete to remove it; use the canvas to move it.`;
+        else status.textContent = `${description} selected. Press Delete to remove it; drag to move${resizable(mark) ? " or resize from a corner handle" : ""}.`;
       });
       item.append(button);
       objectListItems.append(item);
@@ -364,6 +489,7 @@ export function attachAnnotations(
     for (const mark of marks)
       if (mark.tool !== "spotlight" && mark !== editingMark) drawMark(ctx, mark);
     if (draft && draft !== spotlight) drawMark(ctx, draft);
+    drawRedactions(ctx, marks.filter((mark) => mark !== editingMark));
     if (selectedMark && selectedMark !== editingMark) {
       const bounds =
         selectedMark.tool === "text"
@@ -382,6 +508,7 @@ export function attachAnnotations(
       }
     }
     options.drawForeground?.(ctx);
+    if (selectedMark && selectedMark !== editingMark) drawResizeHandles(ctx, selectedMark);
     renderObjectList();
     undo.disabled = options.canUndo ? !options.canUndo() : historyIndex === 0;
     redo.disabled = options.canRedo ? !options.canRedo() : historyIndex >= history.length - 1;
@@ -475,9 +602,29 @@ export function attachAnnotations(
   canvas.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     const point = pointFromEvent(event);
+    if (selectedMark) {
+      const resizeCorner = resizeCornerAt(point, selectedMark);
+      if (resizeCorner !== undefined && resizeCorner >= 0) {
+        const corners = boxCorners(selectedMark);
+        markDrag = {
+          mark: selectedMark,
+          start: point,
+          origins: selectedMark.points.map((origin) => ({ ...origin })),
+          moved: false,
+          resizeCorner,
+          anchor: corners[(resizeCorner + 2) % 4],
+        };
+        canvas.setPointerCapture(event.pointerId);
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
     const hit = markAt(point);
     if (hit && !event.altKey) {
       selectedMark = hit;
+      color = hit.color;
+      colorInput.value = color;
       markDrag = {
         mark: hit,
         start: point,
@@ -487,7 +634,7 @@ export function attachAnnotations(
       canvas.setPointerCapture(event.pointerId);
       render();
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       return;
     }
     if (tool === "select") {
@@ -497,18 +644,32 @@ export function attachAnnotations(
     }
     if (tool === "text") {
       startText(point, event);
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       return;
     }
     selectedMark = undefined;
-    draft = { tool, color, points: [point] };
+    draft = { tool, color: tool === "mask" || tool === "blur" ? toolColors[tool]! : color, points: [point] };
     canvas.setPointerCapture(event.pointerId);
     event.preventDefault();
-    event.stopPropagation();
+    event.stopImmediatePropagation();
   });
   canvas.addEventListener("pointermove", (event) => {
     if (markDrag) {
+      event.stopImmediatePropagation();
       const point = pointFromEvent(event);
+      if (markDrag.resizeCorner !== undefined && markDrag.anchor) {
+        const anchor = markDrag.anchor;
+        let x = Math.max(0, Math.min(canvas.width, point.x));
+        let y = Math.max(0, Math.min(canvas.height, point.y));
+        if (Math.abs(x - anchor.x) < 2) x = Math.max(0, Math.min(canvas.width, anchor.x + (markDrag.resizeCorner === 0 || markDrag.resizeCorner === 3 ? -2 : 2)));
+        if (Math.abs(y - anchor.y) < 2) y = Math.max(0, Math.min(canvas.height, anchor.y + (markDrag.resizeCorner < 2 ? -2 : 2)));
+        if (Math.hypot(point.x - markDrag.start.x, point.y - markDrag.start.y) > 1) markDrag.moved = true;
+        if (markDrag.moved) {
+          markDrag.mark.points = [{ ...anchor }, { x, y }];
+          render();
+        }
+        return;
+      }
       let dx = point.x - markDrag.start.x;
       let dy = point.y - markDrag.start.y;
       if (Math.hypot(dx, dy) > 2) markDrag.moved = true;
@@ -531,7 +692,16 @@ export function attachAnnotations(
       }
       return;
     }
+    if (!draft && selectedMark) {
+      const corner = resizeCornerAt(pointFromEvent(event), selectedMark);
+      if (corner !== undefined && corner >= 0) {
+        canvas.style.cursor = corner % 2 === 0 ? "nwse-resize" : "nesw-resize";
+        return;
+      }
+      if (tool === "select") canvas.style.cursor = "default";
+    }
     if (!draft) return;
+    event.stopImmediatePropagation();
     if (draft.points.length >= 4000 && draft.tool === "pen") return;
     const point = pointFromEvent(event);
     if (draft.tool === "pen") draft.points.push(point);
@@ -540,18 +710,20 @@ export function attachAnnotations(
   });
   const finishMark = (event: PointerEvent) => {
     if (markDrag) {
+      event.stopImmediatePropagation();
       const gesture = markDrag;
       markDrag = undefined;
       if (!gesture.moved && gesture.mark.tool === "text")
         startText(gesture.origins[0]!, event, gesture.mark);
       else if (gesture.moved) {
         pushHistory();
-        status.textContent = `${gesture.mark.tool === "pen" ? "Drawing" : gesture.mark.tool} moved`;
+        status.textContent = gesture.resizeCorner !== undefined ? `${gesture.mark.tool} resized` : `${gesture.mark.tool === "pen" ? "Drawing" : gesture.mark.tool} moved`;
       } else
-        status.textContent = `${gesture.mark.tool} selected. Drag to move.`;
+        status.textContent = `${gesture.mark.tool} selected. Drag to move${resizable(gesture.mark) ? " or resize from a corner handle" : ""}.`;
       return;
     }
     if (!draft) return;
+    event.stopImmediatePropagation();
     if (draft.points.length > 1) {
       if (draft.tool === "spotlight") {
         for (let index = marks.length - 1; index >= 0; index--)
@@ -576,7 +748,12 @@ export function attachAnnotations(
   });
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (textEditor) return;
+    if (
+      textEditor ||
+      event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement ||
+      (event.target instanceof HTMLElement && event.target.isContentEditable)
+    ) return;
     const key = event.key.toLowerCase();
     if (event.metaKey || event.ctrlKey) {
       if (key === "z") {
@@ -605,9 +782,9 @@ export function attachAnnotations(
       event.preventDefault();
       event.stopPropagation();
       selectTool(nextTool);
-    } else if (event.key === "Delete" && selectedMark) {
+    } else if ((event.key === "Delete" || event.key === "Backspace") && selectedMark) {
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       const index = marks.indexOf(selectedMark);
       if (index >= 0) {
         marks.splice(index, 1);
@@ -625,6 +802,7 @@ export function attachAnnotations(
     const spotlight = [...marks].reverse().find((mark) => mark.tool === "spotlight");
     if (spotlight) drawSpotlight(context, spotlight);
     for (const mark of marks) if (mark.tool !== "spotlight") drawMark(context, mark);
+    drawRedactions(context, marks);
   };
   document.addEventListener("keydown", onKeyDown, true);
 
@@ -657,6 +835,7 @@ export function attachAnnotations(
     textEditor = undefined;
     bitmap?.close();
     bitmap = undefined;
+    blurSurface.width = blurSurface.height = 1;
     toolbar.remove();
     objectList.remove();
   }) as AnnotationAttachment;
