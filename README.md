@@ -26,14 +26,15 @@ Real screenshots of the unpacked extension running on the included local showcas
 - Lets you drag over any visible part of a page, then copy it directly or open the in-page preview and editor.
 - Captures the current visible viewport in one step and opens it in the screenshot editor.
 - Copies a visible element capture directly from the pointer controls, or opens an in-page preview.
-- Adds pen, arrow, rectangle, text and spotlight annotations to the captured image, with color selection, undo and clear.
+- Adds pen, arrow, rectangle, text, spotlight, blur and solid-mask annotations to the captured image, with color selection, undo and clear.
+- Adds optional macOS or Windows window framing and a capture date/time caption to exported screenshots. The source address is hidden by default; enabling it shows only the origin and path, with credentials, query parameters and fragments removed.
 - Copies or saves the annotated image as PNG without changing the source webpage or opening another tab.
 - Captures vertically scrolling pages, then opens the stitched image in the annotation editor in a new tab.
 - Captures multiple page elements and places them as editable, movable objects on a composition canvas. Annotate the combined layout with the same pen, arrow, rectangle, text and spotlight tools; annotations are included in the exported PNG.
 - Uses temporary tab access only after you invoke the extension.
 - Keeps screenshots on your device and discards them when you close the preview.
 
-Element captures include the visible pixels inside an element's bounds. Full-page capture scrolls through a vertically scrolling page and stitches the visible segments. Precision compensates for wide sticky bars at the top; fixed or sticky UI elsewhere can still repeat. Annotation tools draw on the screenshot canvas only; the source webpage is not edited. Images are processed locally, without screenshot history or cloud features.
+Element captures include the visible pixels inside an element's bounds. Full-page capture scrolls through a vertically scrolling page and stitches the visible segments. Precision compensates for wide sticky bars at the top; fixed or sticky UI elsewhere can still repeat. Annotation tools draw on the screenshot canvas only; the source webpage is not edited. Blur and solid masks remain editable until export and are baked into the PNG pixels. Use the opaque solid mask for sensitive information; blur is a visual concealment effect and is not a secure redaction guarantee. Images are processed locally, without screenshot history or cloud features.
 
 ## Install from source
 

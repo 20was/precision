@@ -10,6 +10,7 @@ import { isSupportedPageUrl } from "./shared/page-url";
 import { deleteHandoff, saveHandoffChunk, saveHandoffMeta } from "./shared/handoff";
 import { captureWithTransientRetry } from "./shared/capture-retry";
 import { withTimeout } from "./shared/timeout";
+import { safeSourceUrl } from "./shared/window-frame";
 interface Session {
   id: string;
   tab: number;
@@ -18,6 +19,7 @@ interface Session {
   phase: Phase;
   mode: "element" | "region" | "fullPage" | "compose";
   expires: number;
+  lastCapturedAt?: number;
 }
 const sessions = new Map<number, Session>();
 const visibleCaptures = new Set<number>();
@@ -132,6 +134,7 @@ async function captureVisibleViewport(tabId: number) {
         lastCapture = Date.now();
       },
     );
+    const capturedAt = Date.now();
     const current = await chrome.tabs.get(tabId);
     if (!current.active || current.windowId !== tab.windowId)
       throw new Error("The active page changed during capture. Try again.");
@@ -151,7 +154,7 @@ async function captureVisibleViewport(tabId: number) {
     if (!count || count > 1024) throw new Error("The viewport image is too large to transfer safely.");
     for (let index = 0; index < count; index++)
       await saveHandoffChunk(id, index, encoded.slice(index * chunkSize, Math.min(encoded.length, (index + 1) * chunkSize)));
-    await saveHandoffMeta({ id, kind: "image", width, height, count, created: Date.now() });
+    await saveHandoffMeta({ id, kind: "image", width, height, count, created: Date.now(), capturedAt, sourceUrl: safeSourceUrl(tab.url) });
     const stillActive = await chrome.tabs.get(tabId);
     if (!stillActive.active || stillActive.windowId !== tab.windowId)
       throw new Error("The active page changed before the capture was ready. Try again.");
@@ -181,10 +184,12 @@ async function captureFrame(s: Session) {
     await active(s);
     lastCapture = Date.now();
     const image = await chrome.tabs.captureVisibleTab(s.window, { format: "png" });
+    const capturedAt = Date.now();
+    s.lastCapturedAt = capturedAt;
     await active(s);
     if (sessions.get(s.tab) !== s)
       throw new Error("Capture cancelled. Start again when ready.");
-    return { image };
+    return { image, capturedAt };
   } finally {
     capturing = false;
   }
@@ -211,6 +216,8 @@ async function capture(s: Session, message: CaptureMessage) {
       format: "png",
     });
     const captured = performance.now();
+    const capturedAt = Date.now();
+    if (composing) s.lastCapturedAt = capturedAt;
     await active(s);
     const verified = await chrome.tabs.sendMessage(
       s.tab,
@@ -289,7 +296,7 @@ async function capture(s: Session, message: CaptureMessage) {
       crop.width,
       crop.height,
     );
-    return { delivery: message.delivery, png, width: crop.width, height: crop.height };
+    return { delivery: message.delivery, png, width: crop.width, height: crop.height, capturedAt };
   } finally {
     bitmap?.close();
     capturing = false;
@@ -373,6 +380,10 @@ async function route(message: unknown, sender: chrome.runtime.MessageSender) {
       height: message.height,
       count: message.count,
       created: Date.now(),
+      capturedAt: typeof message.capturedAt === "number" && Number.isFinite(message.capturedAt)
+        ? Math.min(Date.now(), message.capturedAt)
+        : s.lastCapturedAt ?? Date.now(),
+      sourceUrl: safeSourceUrl((await chrome.tabs.get(s.tab)).url),
     });
     await active(s);
     s.phase = transition(s.phase, "capturing");
@@ -417,6 +428,8 @@ async function route(message: unknown, sender: chrome.runtime.MessageSender) {
       count: message.count,
       itemCount: message.itemCount,
       created: Date.now(),
+      capturedAt: s.lastCapturedAt ?? Date.now(),
+      sourceUrl: safeSourceUrl((await chrome.tabs.get(s.tab)).url),
     });
     await active(s);
     s.phase = transition(s.phase, "capturing");

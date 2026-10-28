@@ -1,5 +1,7 @@
 import { attachAnnotations, type AnnotationAttachment, type AnnotationTool } from "./annotation";
 import { clientToCanvasPoint, resizedAspectWidth } from "./shared/editor-geometry";
+import { clipWindowContent, displaySourceUrl, drawWindowFrame, formatCaptureTime, frameDimensions, type WindowFrameStyle } from "./shared/window-frame";
+import { createFrameControls } from "./shared/frame-controls";
 
 type CompositionSource = { width: number; height: number; label: string };
 
@@ -30,6 +32,8 @@ export function showCompositionEditor(
   sources: CompositionSource[],
   bitmaps: ImageBitmap[],
   close: () => void,
+  sourceUrl?: string,
+  capturedAt = Date.now(),
 ) {
   const host = document.createElement("precision-composition");
   host.style.cssText = "all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;display:block!important;";
@@ -39,7 +43,7 @@ export function showCompositionEditor(
     :host{color-scheme:light dark}*{box-sizing:border-box}
     .panel{position:fixed;inset:20px;display:grid;grid-template-rows:64px minmax(0,1fr) 64px;background:#f7f7f5;color:#202124;border:1px solid #d9dadd;border-radius:14px;box-shadow:0 24px 72px #0003;overflow:hidden;font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
     header,footer{display:flex;align-items:center;gap:12px;padding:0 20px;background:#fff;border-color:#e5e5e3}header{border-bottom:1px solid #e5e5e3}footer{justify-content:space-between;border-top:1px solid #e5e5e3}
-    .identity{display:grid;gap:1px;min-width:0}.title{font-size:15px;font-weight:650;letter-spacing:-.2px}.subtitle,.status{color:#73757a;font-size:12px}
+    .identity{display:grid;gap:1px;min-width:0}.title{font-size:15px;font-weight:650;letter-spacing:-.2px}.subtitle,.status{color:#73757a;font-size:12px}.frame-options{display:flex;align-items:center;gap:3px;margin-left:auto;padding:3px;background:#f3f3f1;border:1px solid #e5e5e3;border-radius:8px;flex:none}.frame-options button{height:28px;padding:0 8px;background:transparent;border:0;border-radius:5px;color:#55575b;font-size:11px;cursor:pointer}.frame-options button[aria-pressed=true]{background:#fff;color:#202124;box-shadow:0 1px 3px #0002}.frame-url-toggle{display:flex;align-items:center;gap:5px;white-space:nowrap}.frame-controls{display:flex;align-items:center;gap:5px;margin-left:auto;flex:none}.frame-picker{position:relative}.frame-trigger,.frame-meta-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 9px;color:#45474b;background:#fff;border:1px solid #d5d6d8;border-radius:7px;font:500 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;white-space:nowrap;cursor:pointer}.frame-trigger:hover,.frame-meta-toggle:hover{background:#f5f6f7;border-color:#b9bbbf}.frame-trigger[aria-expanded=true],.frame-meta-toggle[aria-pressed=true]{background:#eaf1ff;border-color:#cdddf8;color:#174da8}.frame-trigger svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6}.frame-chevron{width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin:-3px 2px 0}.frame-popover{position:absolute;z-index:6;right:0;top:calc(100% + 6px);width:190px;padding:5px;background:Canvas;color:CanvasText;border:1px solid color-mix(in srgb,CanvasText 18%,transparent);border-radius:9px;box-shadow:0 8px 24px #0003}.frame-popover[hidden]{display:none}.frame-option{display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:0 9px;background:transparent;border:0;border-radius:6px;color:inherit;text-align:left;font:500 12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}.frame-option:hover,.frame-option[aria-current=true]{background:color-mix(in srgb,Highlight 12%,Canvas)}.frame-option-icon{width:16px;height:12px;border:1px solid currentColor;border-radius:3px;flex:none}.frame-option-icon.mac{border-top:3px solid #9c9ea3;background:radial-gradient(circle at 4px 1px,#f46b64 0 1.5px,transparent 2px),radial-gradient(circle at 8px 1px,#e5b64d 0 1.5px,transparent 2px)}.frame-option-icon.windows{background:linear-gradient(currentColor,currentColor) 3px 8px/3px 1px no-repeat,linear-gradient(currentColor,currentColor) 8px 3px/4px 4px no-repeat}.frame-option-check{margin-left:auto;width:14px;height:14px}.frame-option[aria-current=true] .frame-option-check:after{content:"";display:block;width:6px;height:9px;border-right:2px solid #2165c9;border-bottom:2px solid #2165c9;transform:rotate(45deg);margin:0 0 0 3px}.window-bar{display:none;align-items:center;justify-content:space-between;gap:14px;height:48px;padding:0 14px;background:#f6f6f7;border:1px solid #d6d7da;border-bottom:0;border-radius:10px 10px 0 0;color:#44464b;font-size:13px}.window-bar.active{display:flex}.window-bar[data-style=windows] .window-dots,.window-bar[data-style=mac] .window-controls,.window-bar[data-style=none] .window-dots,.window-bar[data-style=none] .window-controls{display:none}.window-dots{display:flex;gap:6px}.window-dots span{width:10px;height:10px;border-radius:50%;background:#ff5f57}.window-dots span:nth-child(2){background:#febc2e}.window-dots span:nth-child(3){background:#28c840}.window-url{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;padding:6px 12px;border-radius:6px;background:#e9eaec;text-align:center;color:#383a40;font-size:13px;line-height:18px}.window-controls{display:flex;gap:12px;align-items:center}.window-controls span{width:10px;height:10px;border:1px solid currentColor}.capture-time{display:none;flex:none;margin-left:auto;padding:6px 0;color:#43464c;font:600 14px/20px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;white-space:nowrap}.capture-time.active{display:block}
     .zoom{display:flex;align-items:center;gap:3px;margin-left:auto;padding:3px;background:#f3f3f1;border:1px solid #e5e5e3;border-radius:8px}.button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:0 11px;color:#313338;background:#fff;border:1px solid #d5d6d8;border-radius:7px;font:500 12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;white-space:nowrap}.button:hover{background:#f2f3f4;border-color:#b9bbbf}.button:disabled{opacity:.42;cursor:default}.button:focus-visible{outline:2px solid #4b83e6;outline-offset:2px}.button svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
     .zoom-button{display:grid;place-items:center;min-width:30px;height:30px;padding:0;background:transparent;border:0;border-radius:5px}.zoom-button:hover{background:#e8e9e9}.zoom-value{min-width:48px;font-variant-numeric:tabular-nums}
     .workspace{display:grid;grid-template-columns:minmax(0,1fr) 250px;min-width:0;min-height:0;background:#eee}
@@ -52,13 +56,14 @@ export function showCompositionEditor(
     .annotation-tools input[type=color]{width:30px;height:30px;padding:2px;border:1px solid #d7d8da;border-radius:7px;background:#fff;cursor:pointer}
     .canvas-text-input{position:absolute;z-index:5;min-width:1em;height:auto;padding:0;color:inherit;background:transparent;border:0;border-radius:0;box-shadow:none;outline:0;font:600 16px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;caret-color:currentColor;text-shadow:0 1px 2px #0008}
     @media(prefers-color-scheme:dark){.annotation-tools{background:#292b2e;border-color:#414348;box-shadow:0 4px 16px #0006}.annotation-tools .tool-button{color:#d1d3d7}.annotation-tools .tool-button:hover{background:#383a3e}.annotation-tools .tool-button[aria-pressed=true]{color:#a9c7ff;background:#253a5f;border-color:#365681}.annotation-tools input[type=color]{background:#292b2e;border-color:#55585d}.canvas-text-input{color:#f1f3f4;text-shadow:0 1px 2px #000b}}
-    .canvas-wrap{order:2;width:max-content;height:max-content;min-width:100%;min-height:100%;display:grid;place-items:center}
+    .window-bar[data-style=mac] .window-controls{display:none}.window-bar[data-style=windows] .window-dots{display:none}.window-bar[data-style=windows] .window-controls span:first-child{width:10px;height:1px;border:0;background:currentColor}.window-bar[data-style=windows] .window-controls span:last-child{position:relative;border:0}.window-bar[data-style=windows] .window-controls span:last-child:before,.window-bar[data-style=windows] .window-controls span:last-child:after{content:"";position:absolute;left:4px;top:-1px;width:1px;height:12px;background:currentColor;transform:rotate(45deg)}.window-bar[data-style=windows] .window-controls span:last-child:after{transform:rotate(-45deg)}
+    .canvas-wrap{order:2;width:max-content;height:max-content;min-width:100%;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center}
     canvas{display:block;max-width:none;max-height:none;width:auto;height:auto;background:#fff;box-shadow:0 6px 24px #0002;touch-action:none;cursor:default}
     aside{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-width:0;min-height:0;padding:16px;background:#fff;border-left:1px solid #e2e2df}.aside-title{margin:0 0 10px;font-size:12px;font-weight:650}.layers{display:flex;flex-direction:column;gap:4px;overflow:auto}.layer{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;padding:0 9px;text-align:left;background:#fff;border:1px solid transparent;border-radius:6px;color:#45474b;font:12px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}.layer:hover{background:#f5f5f4}.layer[aria-pressed=true]{background:#edf3ff;border-color:#d3e2ff;color:#174da8}.layer-number{display:grid;place-items:center;width:20px;height:20px;flex:none;border-radius:5px;background:#f0f0ee;color:#666;font-size:10px}.layer-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.inspector{display:grid;gap:7px;min-width:0;padding-top:12px;border-top:1px solid #e6e6e3}.selection-label{min-height:18px;color:#777a80;font-size:11px}.arrange{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;min-width:0}.arrange .button{min-width:0;padding:4px 6px;font-size:11px;line-height:1.25;white-space:normal}.inspector>.button{width:100%;min-width:0;white-space:normal}.danger{color:#a3282d}.danger:hover{background:#fff3f3;border-color:#edc6c8}
     .status{min-height:18px}.actions{display:flex;align-items:center;gap:8px}.primary{color:#fff;background:#1f2937;border-color:#1f2937}.primary:hover{background:#111827;border-color:#111827}
-    @media(prefers-color-scheme:dark){.panel{background:#202124;color:#f1f3f4;border-color:#3b3d40}header,footer,aside{background:#252629;border-color:#3b3d40}.subtitle,.status,.selection-label{color:#aeb0b5}.zoom{background:#292b2e;border-color:#414348}.zoom-button{color:#d1d3d7}.zoom-button:hover{background:#383a3e}.button{color:#e1e3e6;background:#292b2e;border-color:#4a4c50}.button:hover{background:#35373b;border-color:#65676d}.button.primary{color:#202124;background:#e8eaed;border-color:#e8eaed}.button.primary:hover{background:#fff}.workspace{background:#1b1c1e}.layer{background:transparent;color:#d1d3d7}.layer:hover{background:#303236}.layer[aria-pressed=true]{color:#a9c7ff;background:#253a5f;border-color:#365681}.layer-number{background:#36383c;color:#c8cbd0}.inspector{border-color:#414348}.danger{color:#ff9a9d}.danger:hover{background:#472e30;border-color:#73484b}canvas{box-shadow:0 6px 24px #0007}}
-    @media(max-width:760px){.panel{inset:8px;grid-template-rows:58px minmax(0,1fr) auto;border-radius:10px}header{padding:0 12px;gap:7px}.workspace{grid-template-columns:minmax(0,1fr)}aside{grid-row:2;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr);gap:8px 12px;padding:9px 12px;border-left:0;border-top:1px solid #e2e2df}.aside-title{margin:0}.layers{grid-row:2;flex-direction:row;align-items:start}.layer{width:auto;min-width:95px}.inspector{grid-row:1/3;grid-column:2;align-self:stretch;min-width:120px;padding:0 0 0 10px;border-top:0;border-left:1px solid #e6e6e3}.selection-label{display:none}.arrange{grid-template-columns:1fr}.arrange .button{min-height:28px}.viewport{padding:14px}.panel{grid-template-rows:58px minmax(0,1fr) 132px}footer{padding:8px 12px;gap:8px}.status{display:none}.actions{margin-left:auto}.button{min-height:32px;padding:0 8px}}
-    @media(max-width:420px){.panel{grid-template-rows:52px minmax(0,1fr) 138px}header{padding:0 8px}.title{font-size:13px}.subtitle{display:none}.zoom{gap:0;padding:1px}.zoom-button{min-width:26px;height:28px}.zoom-value{min-width:40px}.close{width:30px;padding:0}.workspace{grid-template-rows:minmax(0,1fr) 138px}aside{grid-template-columns:minmax(0,1fr) 104px;padding:8px}.layer{min-width:80px;padding:0 6px}.viewport{padding:8px}.actions{gap:5px}.button{font-size:11px}}
+    @media(prefers-color-scheme:dark){.panel{background:#202124;color:#f1f3f4;border-color:#3b3d40}header,footer,aside{background:#252629;border-color:#3b3d40}.subtitle,.status,.selection-label{color:#aeb0b5}.zoom{background:#292b2e;border-color:#414348}.zoom-button{color:#d1d3d7}.zoom-button:hover{background:#383a3e}.button{color:#e1e3e6;background:#292b2e;border-color:#4a4c50}.button:hover{background:#35373b;border-color:#65676d}.button.primary{color:#202124;background:#e8eaed;border-color:#e8eaed}.button.primary:hover{background:#fff}.workspace{background:#1b1c1e}.layer{background:transparent;color:#d1d3d7}.layer:hover{background:#303236}.layer[aria-pressed=true]{color:#a9c7ff;background:#253a5f;border-color:#365681}.layer-number{background:#36383c;color:#c8cbd0}.inspector{border-color:#414348}.danger{color:#ff9a9d}.danger:hover{background:#472e30;border-color:#73484b}.frame-trigger,.frame-meta-toggle{color:#d1d3d7;background:#292b2e;border-color:#4a4c50}.frame-trigger:hover,.frame-meta-toggle:hover{background:#35373b;border-color:#65676d}.frame-trigger[aria-expanded=true],.frame-meta-toggle[aria-pressed=true]{color:#a9c7ff;background:#253a5f;border-color:#365681}.frame-popover{background:#292b2e;color:#e1e3e6;border-color:#4a4c50}.frame-option:hover,.frame-option[aria-current=true]{background:#383a3e}.window-bar,.capture-time{background:#292b2e;border-color:#414348;color:#d1d3d7}.window-url{background:#383a3e;color:#d1d3d7}canvas{box-shadow:0 6px 24px #0007}}
+    @media(max-width:760px){.panel{inset:8px;grid-template-rows:58px minmax(0,1fr) auto;border-radius:10px}header{padding:0 12px;gap:7px}.frame-controls{max-width:190px;overflow-x:auto}.workspace{grid-template-columns:minmax(0,1fr)}aside{grid-row:2;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr);gap:8px 12px;padding:9px 12px;border-left:0;border-top:1px solid #e2e2df}.aside-title{margin:0}.layers{grid-row:2;flex-direction:row;align-items:start}.layer{width:auto;min-width:95px}.inspector{grid-row:1/3;grid-column:2;align-self:stretch;min-width:120px;padding:0 0 0 10px;border-top:0;border-left:1px solid #e6e6e3}.selection-label{display:none}.arrange{grid-template-columns:1fr}.arrange .button{min-height:28px}.viewport{padding:14px}.panel{grid-template-rows:58px minmax(0,1fr) 132px}footer{padding:8px 12px;gap:8px}.status{display:none}.actions{margin-left:auto}.button{min-height:32px;padding:0 8px}}
+    @media(max-width:420px){.panel{grid-template-rows:52px minmax(0,1fr) 138px}header{padding:0 5px;gap:4px}.title{font-size:13px}.subtitle{display:none}.frame-controls{max-width:145px;gap:3px}.frame-trigger,.frame-meta-toggle{padding:0 6px;font-size:10px}.zoom{gap:0;padding:1px}.zoom-button{min-width:26px;height:28px}.zoom-value{min-width:40px}.close{width:30px;padding:0}.workspace{grid-template-rows:minmax(0,1fr) 138px}aside{grid-template-columns:minmax(0,1fr) 104px;padding:8px}.layer{min-width:80px;padding:0 6px}.viewport{padding:8px}.actions{gap:5px}.button{font-size:11px}}
   `;
   const panel = document.createElement("main");
   panel.className = "panel";
@@ -92,13 +97,22 @@ export function showCompositionEditor(
     zoomIn = zoomButton("Zoom in (+)", "M12 5v14M5 12h14");
   zoomValue.classList.add("zoom-value");
   zoom.append(zoomOut, zoomValue, zoomIn);
+  let frameStyle: WindowFrameStyle = "none", showUrl = false, showTimestamp = false;
+  let refreshFrame = () => {};
+  const frameControls = createFrameControls(sourceUrl, (state) => {
+    frameStyle = state.frameStyle;
+    showUrl = state.showUrl;
+    showTimestamp = state.showTimestamp;
+    refreshFrame();
+  });
+  frameControls.attachDismiss(root);
   const closeButton = document.createElement("button");
   closeButton.className = "button close";
   closeButton.type = "button";
   closeButton.title = "Close editor";
   closeButton.setAttribute("aria-label", "Close editor");
   closeButton.append(icon("M6 6l12 12M18 6 6 18"));
-  header.append(identity, zoom, closeButton);
+  header.append(identity, frameControls.element, zoom, closeButton);
 
   const workspace = document.createElement("section");
   workspace.className = "workspace";
@@ -108,6 +122,23 @@ export function showCompositionEditor(
   viewport.setAttribute("aria-label", "Scrollable composition canvas");
   const canvasWrap = document.createElement("div");
   canvasWrap.className = "canvas-wrap";
+  const windowBar = document.createElement("div");
+  windowBar.className = "window-bar";
+  windowBar.setAttribute("aria-hidden", "true");
+  const windowDots = document.createElement("div");
+  windowDots.className = "window-dots";
+  windowDots.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+  const windowUrl = document.createElement("div");
+  windowUrl.className = "window-url";
+  windowUrl.textContent = displaySourceUrl(sourceUrl) ?? "";
+  const windowControls = document.createElement("div");
+  windowControls.className = "window-controls";
+  windowControls.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+  const captureTime = document.createElement("div");
+  captureTime.className = "capture-time";
+  captureTime.setAttribute("aria-label", "Capture date and time");
+  captureTime.textContent = formatCaptureTime(capturedAt) ?? "";
+  windowBar.append(windowDots, windowUrl, captureTime, windowControls);
   const canvas = document.createElement("canvas");
   const padding = 48,
     gap = 28,
@@ -166,7 +197,7 @@ export function showCompositionEditor(
   arrange.append(front, back);
   inspector.append(selectionLabel, arrange, remove);
   layersPanel.append(layersTitle, layers, inspector);
-  canvasWrap.append(canvas);
+  canvasWrap.append(windowBar, canvas);
   viewport.append(canvasWrap);
   workspace.append(viewport, layersPanel);
 
@@ -193,6 +224,17 @@ export function showCompositionEditor(
     fitMode: "whole" | "width" | "custom" = "width",
     gesture: { source: number; startX: number; startY: number; original: PlacedItem; resizing: boolean; changed: boolean } | undefined,
     disposed = false;
+  refreshFrame = () => {
+    const active = frameStyle !== "none";
+    windowBar.classList.toggle("active", active || showTimestamp);
+    captureTime.classList.toggle("active", showTimestamp);
+    windowBar.dataset.style = frameStyle;
+    windowBar.style.width = `${Math.round(canvas.width * zoomScale)}px`;
+    windowUrl.hidden = !active;
+    windowUrl.textContent = showUrl ? displaySourceUrl(sourceUrl) ?? "" : "";
+    captureTime.style.width = `${Math.round(canvas.width * zoomScale)}px`;
+  };
+  refreshFrame();
   const snapshotLayout = (): LayoutSnapshot => ({
     items: items.map((item) => ({ ...item })),
     selectedSource: items[selected]?.source ?? null,
@@ -318,6 +360,7 @@ export function showCompositionEditor(
   const renderZoom = () => {
     canvas.style.width = `${Math.round(canvas.width * zoomScale)}px`;
     canvas.style.height = `${Math.round(canvas.height * zoomScale)}px`;
+    refreshFrame();
     zoomValue.textContent = `${Math.round(zoomScale * 100)}%`;
     zoomValue.setAttribute("aria-label", `Current zoom ${Math.round(zoomScale * 100)} percent. Fit whole composition.`);
   };
@@ -336,7 +379,7 @@ export function showCompositionEditor(
   const fit = (mode: "whole" | "width") => {
     if (!viewport.clientWidth || !viewport.clientHeight) return;
     fitMode = mode;
-    zoomScale = Math.min(1, viewport.clientWidth / canvas.width, mode === "whole" ? viewport.clientHeight / canvas.height : 1);
+    zoomScale = Math.min(1, viewport.clientWidth / canvas.width, mode === "whole" ? (viewport.clientHeight - (frameStyle === "none" ? 0 : 42) - (showTimestamp ? 34 : 0)) / canvas.height : 1);
     renderZoom();
     viewport.scrollLeft = 0;
     viewport.scrollTop = 0;
@@ -473,10 +516,16 @@ export function showCompositionEditor(
   };
   const exportBlob = async () => {
     if (!items.length) throw new Error("Add an element before exporting.");
-    const output = new OffscreenCanvas(canvas.width, canvas.height),
+    const dimensions = frameStyle === "none" && !showTimestamp ? { width: canvas.width, height: canvas.height, inset: 0, bar: 0, footer: 0 } : frameDimensions(canvas.width, canvas.height, frameStyle, showTimestamp);
+    if (dimensions.width * dimensions.height > 40_000_000) throw new Error("The framed composition is too large to export safely. Turn the frame off or use a smaller capture.");
+    const output = new OffscreenCanvas(dimensions.width, dimensions.height),
       context = output.getContext("2d");
     if (!context) throw new Error("Could not prepare the composition image.");
+    if (frameStyle !== "none" || showTimestamp) drawWindowFrame(context, canvas.width, canvas.height, frameStyle, sourceUrl, showUrl, showTimestamp, capturedAt);
+    context.save();
+    clipWindowContent(context, canvas.width, canvas.height, frameStyle, showTimestamp);
     annotation?.renderForExport(context);
+    context.restore();
     const blob = await output.convertToBlob({ type: "image/png" });
     output.width = output.height = 1;
     return blob;

@@ -2,6 +2,7 @@ import { showPreview } from "./overlay";
 import { openHandoffDb, type HandoffMeta } from "./shared/handoff";
 import { showCompositionEditor } from "./composition-editor";
 import type { CompositionItem } from "./shared/composition";
+import { safeSourceUrl } from "./shared/window-frame";
 
 const closeEditor = () => {
   void chrome.runtime.sendMessage({ type: "closeEditor" }).catch(() => window.close());
@@ -56,9 +57,11 @@ async function takeCapture(id: string) {
       tx.onerror = () => reject(tx.error ?? new Error("Could not read the local screenshot."));
       tx.onabort = () => reject(tx.error ?? new Error("Screenshot handoff was interrupted."));
     });
-    if (!result.meta || result.meta.created < Date.now() - 10 * 60_000)
+    if (!result.meta || !Number.isFinite(result.meta.created) || result.meta.created < Date.now() - 10 * 60_000)
       throw new Error("This temporary capture expired. Capture the page again.");
     const { meta, chunks } = result;
+    if (meta.capturedAt !== undefined && (!Number.isFinite(meta.capturedAt) || meta.capturedAt <= 0))
+      throw new Error("The capture date is invalid. Capture the page again.");
     if (meta.kind !== "image" && meta.kind !== "composition")
       throw new Error("The capture type is invalid.");
     if (meta.count > 1024) throw new Error("The capture is too large to open safely.");
@@ -89,7 +92,7 @@ void (async () => {
     if (!id || !/^[a-f0-9-]{36}$/.test(id)) throw new Error("The capture link is invalid.");
     const { meta, payload } = await takeCapture(id);
     if (meta.kind === "image") {
-      showPreview(payload, meta.width, meta.height, closeEditor);
+      showPreview(payload, meta.width, meta.height, closeEditor, safeSourceUrl(meta.sourceUrl), meta.capturedAt ?? meta.created);
       return;
     }
     const raw: unknown = JSON.parse(payload);
@@ -116,7 +119,7 @@ void (async () => {
     }));
     if (decodedBitmaps.some((bitmap, index) => bitmap.width !== items[index]!.width || bitmap.height !== items[index]!.height))
       throw new Error("An element image did not match its capture dimensions.");
-    showCompositionEditor(items.map(({ width, height, label }) => ({ width, height, label })), decodedBitmaps, closeEditor);
+    showCompositionEditor(items.map(({ width, height, label }) => ({ width, height, label })), decodedBitmaps, closeEditor, safeSourceUrl(meta.sourceUrl), meta.capturedAt ?? meta.created);
     decodedBitmaps = [];
   } catch (error) {
     for (const bitmap of decodedBitmaps) bitmap.close();

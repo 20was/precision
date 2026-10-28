@@ -7,6 +7,37 @@ import { withTimeout } from "../src/shared/timeout";
 import { canvasToClientPoint, clientToCanvasPoint, resizedAspectWidth } from "../src/shared/editor-geometry";
 import { bounds, parentTarget, childTarget, targetAt } from "../src/target";
 import { captureWithTransientRetry } from "../src/shared/capture-retry";
+import { captureTimeMetrics, displaySourceUrl, formatCaptureTime, frameDimensions, safeSourceUrl } from "../src/shared/window-frame";
+
+describe("screenshot window frame metadata", () => {
+  it("strips credentials, query parameters, and fragments before display", () => {
+    expect(safeSourceUrl("https://user:secret@example.test/path?q=private#section")).toBe("https://example.test/path");
+    expect(displaySourceUrl("https://user:secret@example.test/path?q=private#section")).toBe("example.test/path");
+  });
+  it.each(["javascript:alert(1)", "file:///private/page", "not a url", undefined])(
+    "rejects unsafe or missing source URL %s", (value) => expect(safeSourceUrl(value)).toBeUndefined(),
+  );
+  it("bounds frame sizes while leaving the original screenshot dimensions intact", () => {
+    expect(frameDimensions(800, 600, "none")).toEqual({ width: 800, height: 600, inset: 0, bar: 0, footer: 0, stackMetadata: false });
+    expect(frameDimensions(800, 600, "mac")).toEqual({ width: 832, height: 672, inset: 16, bar: 56, footer: 0, stackMetadata: false });
+    expect(frameDimensions(800, 600, "none", true)).toEqual({ width: 800, height: 656, inset: 0, bar: 56, footer: 0, stackMetadata: false });
+    expect(frameDimensions(220, 180, "mac", true)).toMatchObject({ width: 252, height: 268, inset: 16, bar: 72, stackMetadata: true });
+  });
+  it("formats capture time with seconds and a timezone", () => {
+    const formatted = formatCaptureTime(Date.UTC(2026, 9, 28, 12, 34, 56));
+    expect(formatted).toMatch(/2026/);
+    expect(formatted).toMatch(/34/);
+    expect(formatted).toMatch(/56/);
+    expect(formatted).toContain("·");
+    expect(formatted!.length).toBeLessThan(36);
+    expect(formatted).not.toBeUndefined();
+    expect(formatCaptureTime(Number.NaN)).toBeUndefined();
+  });
+  it("reserves enough proportional space for an uncropped timestamp", () => {
+    expect(captureTimeMetrics(720, 752)).toEqual({ fontSize: 16, maxWidth: 263 });
+    expect(captureTimeMetrics(3024, 3064)).toEqual({ fontSize: 24, maxWidth: 420 });
+  });
+});
 describe("transient viewport screenshot recovery", () => {
   it("retries Chromium's internal screenshot error once after checking the tab", async () => {
     const capture = vi.fn<() => Promise<string>>()

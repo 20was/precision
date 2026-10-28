@@ -193,6 +193,7 @@ function start(session: string, mode: "element" | "compose" = "element") {
         png?: string;
         width?: number;
         height?: number;
+        capturedAt?: number;
       }>;
       if (!response?.ok)
         throw new Error(
@@ -233,7 +234,7 @@ function start(session: string, mode: "element" | "compose" = "element") {
         if (value?.delivery !== "preview" || typeof value.png !== "string" || !Number.isInteger(value.width) || !Number.isInteger(value.height))
           throw new Error("The image preview could not be prepared. Please capture again.");
         cleanup();
-        scope.__precisionPreviewDispose = showPreview(value.png, value.width!, value.height!, () => { scope.__precisionPreviewDispose = undefined; });
+        scope.__precisionPreviewDispose = showPreview(value.png, value.width!, value.height!, () => { scope.__precisionPreviewDispose = undefined; }, location.href, value.capturedAt ?? Date.now());
       }
     } catch (error) {
       if (!done) {
@@ -371,7 +372,7 @@ function startRegion(session: string) {
     selectedViewport: Viewport | null = null,
     captureRect: Rect | null = null,
     captureViewport: Viewport | null = null,
-    cachedCapture: { png: string; width: number; height: number } | undefined;
+    cachedCapture: { png: string; width: number; height: number; capturedAt: number } | undefined;
   const overlay = new Overlay({
     cancel: () => cancel(),
     preview: () => void capture("preview"),
@@ -432,12 +433,12 @@ function startRegion(session: string) {
           rect: captureRect,
           viewport: captureViewport,
           delivery: "preview",
-        })) as Result<{ delivery?: string; png?: string; width?: number; height?: number }>;
+        })) as Result<{ delivery?: string; png?: string; width?: number; height?: number; capturedAt?: number }>;
         if (!response?.ok) throw new Error(response && !response.ok ? response.error : "Capture failed. Try again.");
         const value = response.value;
         if (value?.delivery !== "preview" || typeof value.png !== "string" || !Number.isInteger(value.width) || !Number.isInteger(value.height))
           throw new Error("The selected area could not be prepared. Try again.");
-        cachedCapture = { png: value.png, width: value.width!, height: value.height! };
+        cachedCapture = { png: value.png, width: value.width!, height: value.height!, capturedAt: value.capturedAt ?? Date.now() };
       }
       if (delivery === "copy") {
         if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined")
@@ -449,7 +450,7 @@ function startRegion(session: string) {
         showNotice("Copied to clipboard");
       } else {
         cleanup();
-        scope.__precisionPreviewDispose = showPreview(cachedCapture.png, cachedCapture.width, cachedCapture.height, () => { scope.__precisionPreviewDispose = undefined; });
+        scope.__precisionPreviewDispose = showPreview(cachedCapture.png, cachedCapture.width, cachedCapture.height, () => { scope.__precisionPreviewDispose = undefined; }, location.href, cachedCapture.capturedAt);
       }
     } catch (error) {
       if (done) return;
@@ -697,7 +698,8 @@ function startFullPage(session: string) {
   };
   const run = async () => {
     let canvas: OffscreenCanvas | undefined,
-      context: OffscreenCanvasRenderingContext2D | null = null;
+      context: OffscreenCanvasRenderingContext2D | null = null,
+      capturedAt = Date.now();
     try {
       const visual = visualViewport;
       if (visual && (Math.abs(visual.scale - 1) > 0.001 || Math.abs(visual.offsetLeft) > 0.01 || Math.abs(visual.offsetTop) > 0.01))
@@ -764,6 +766,7 @@ function startFullPage(session: string) {
         const result = await send({ type: "captureFrame" });
         panel.style.visibility = "visible";
         assertLive();
+        if (typeof result.capturedAt === "number" && Number.isFinite(result.capturedAt)) capturedAt = result.capturedAt;
         if (typeof result.image !== "string" || !result.image.startsWith("data:image/png;base64,"))
           throw new Error("The browser did not return a screenshot. Try again.");
         const raw = atob(result.image.slice(result.image.indexOf(",") + 1)),
@@ -820,7 +823,7 @@ function startFullPage(session: string) {
       const height = Math.ceil(pageHeight * scaleY),
         width = bitmapWidth;
       assertLive();
-      await send({ type: "fullPageComplete", width, height, count }, 30000);
+      await send({ type: "fullPageComplete", width, height, count, capturedAt }, 30000);
       finished = true;
     } catch (error) {
       if (!cancelled) showError(error instanceof Error ? error.message : "Full-page capture failed.");

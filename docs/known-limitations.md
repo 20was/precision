@@ -48,7 +48,7 @@
 
 - Editor zoom changes only the canvas display size (5%–400%). Fit resets to the whole-image view; keyboard shortcuts are `-`, `+` and `0`. Zoom is implemented, but composition transforms at multiple zoom levels have not had comprehensive real-browser assertions.
 
-- Annotation marks are flattened into copied/downloaded PNGs; they are not editable after export and are discarded when the editor closes. Text placement is single-line; one rectangular spotlight region is supported. There are no annotation layers, blur/redaction, crop refinement or shape resizing.
+- Annotation marks are flattened into copied/downloaded PNGs; they are not editable after export and are discarded when the editor closes. Text placement is single-line; one rectangular spotlight region is supported. Blur and opaque dark-mask redactions are editable in the open editor, then baked into exported PNG pixels. Blur is not cryptographically secure and may not conceal highly sensitive information; use the opaque mask for secrets. Window frames and capture-time captions are optional. The timestamp uses the local timezone and includes seconds. Source URLs are hidden by default; when shown, only an HTTP(S) origin and path are displayed, with credentials, query parameters and fragments removed. No frame styling presets, gradients, pixelation, social-size canvases or post-export project editing are provided.
 
 - Selection expires after two minutes. Browser focus loss, navigation, switching tabs or resizing cancels it. Screen capture requires the original tab/window still active.
 - Browser capture cannot be aborted once the API call begins. Results from cancelled/stale sessions are discarded.
